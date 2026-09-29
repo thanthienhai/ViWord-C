@@ -1,0 +1,463 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns="http://www.w3.org/2005/Atom">
+  <id>https://arxiv.org/api/es0VvhRH5ryHB4IGL0tG2PSYcPg</id>
+  <title>arXiv Query: search_query=&amp;id_list=2608.26175,2607.25335,2407.15504,2609.13154,2505.00019,2503.19114,2605.17932,2410.11786,2507.11942,2508.02053,2511.12281,2603.23527,2604.02985,2606.19857,2509.05486,2402.10543,2502.07717&amp;start=0&amp;max_results=20</title>
+  <updated>2026-09-29T09:12:37Z</updated>
+  <link href="https://arxiv.org/api/query?search_query=&amp;start=0&amp;max_results=20&amp;id_list=2608.26175,2607.25335,2407.15504,2609.13154,2505.00019,2503.19114,2605.17932,2410.11786,2507.11942,2508.02053,2511.12281,2603.23527,2604.02985,2606.19857,2509.05486,2402.10543,2502.07717" type="application/atom+xml"/>
+  <opensearch:itemsPerPage>20</opensearch:itemsPerPage>
+  <opensearch:totalResults>17</opensearch:totalResults>
+  <opensearch:startIndex>0</opensearch:startIndex>
+  <entry>
+    <id>http://arxiv.org/abs/2407.15504v2</id>
+    <title>Fundamental Limits of Prompt Compression: A Rate-Distortion Framework for Black-Box Language Models</title>
+    <updated>2024-12-11T01:59:36Z</updated>
+    <link href="https://arxiv.org/abs/2407.15504v2" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2407.15504v2" rel="related" type="application/pdf" title="pdf"/>
+    <summary>We formalize the problem of prompt compression for large language models (LLMs) and present a framework to unify token-level prompt compression methods which create hard prompts for black-box models. We derive the distortion-rate function for this setup as a linear program, and provide an efficient algorithm to compute this fundamental limit via the dual of the linear program. Using the distortion-rate function as the baseline, we study the performance of existing compression schemes on a synthetic dataset consisting of prompts generated from a Markov chain, natural language queries, and their respective answers. Our empirical analysis demonstrates the criticality of query-aware prompt compression, where the compressor has knowledge of the downstream task/query for the black-box LLM. We show that there is a large gap between the performance of current prompt compression methods and the optimal strategy, and propose Adaptive QuerySelect, a query-aware, variable-rate adaptation of a prior work to close the gap. We extend our experiments to a small natural language dataset to further confirm our findings on our synthetic dataset.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.IT" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2024-07-22T09:40:13Z</published>
+    <arxiv:comment>42 pages, 17 figures. Accepted to NeurIPS 2024</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Alliot Nagle</name>
+    </author>
+    <author>
+      <name>Adway Girish</name>
+    </author>
+    <author>
+      <name>Marco Bondaschi</name>
+    </author>
+    <author>
+      <name>Michael Gastpar</name>
+    </author>
+    <author>
+      <name>Ashok Vardhan Makkuva</name>
+    </author>
+    <author>
+      <name>Hyeji Kim</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2511.12281v2</id>
+    <title>Cmprsr: Abstractive Token-Level Question-Agnostic Prompt Compressor</title>
+    <updated>2026-01-08T23:16:33Z</updated>
+    <link href="https://arxiv.org/abs/2511.12281v2" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2511.12281v2" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Motivated by the high costs of using black-box Large Language Models (LLMs), we introduce a novel prompt compression paradigm, under which we use smaller LLMs to compress inputs for the larger ones. We present the first comprehensive LLM-as-a-compressor benchmark spanning 25 open- and closed-source models, which reveals significant disparity in models' compression ability in terms of (i) preserving semantically important information (ii) following the user-provided compression rate (CR). We further improve the performance of gpt-4.1-mini, the best overall vanilla compressor, with Textgrad-based compression meta-prompt optimization. We also identify the most promising open-source vanilla LLM - Qwen3-4B - and post-train it with a combination of supervised fine-tuning (SFT) and Group Relative Policy Optimization (GRPO), pursuing the dual objective of CR adherence and maximizing the downstream task performance. We call the resulting model Cmprsr and demonstrate its superiority over both extractive and vanilla abstractive compression across the entire range of compression rates on lengthy inputs from MeetingBank and LongBench as well as short prompts from GSM8k. The latter highlights Cmprsr's generalizability across varying input lengths and domains. Moreover, Cmprsr closely follows the requested compression rate, offering fine control over the cost-quality trade-off.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2025-11-15T16:28:03Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Ivan Zakazov</name>
+    </author>
+    <author>
+      <name>Berke Argin</name>
+    </author>
+    <author>
+      <name>Oussama Gabouj</name>
+    </author>
+    <author>
+      <name>Kamel Charaf</name>
+    </author>
+    <author>
+      <name>Alexander Sharipov</name>
+    </author>
+    <author>
+      <name>Alexi Semiz</name>
+    </author>
+    <author>
+      <name>Lorenzo Drudi</name>
+    </author>
+    <author>
+      <name>Nicolas Baldwin</name>
+    </author>
+    <author>
+      <name>Robert West</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2605.17932v2</id>
+    <title>Prompt Compression in Diffusion Large Language Models: Evaluating LLMLingua-2 on LLaDA</title>
+    <updated>2026-07-11T09:00:14Z</updated>
+    <link href="https://arxiv.org/abs/2605.17932v2" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2605.17932v2" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Prompt compression reduces inference cost and context length in large language models, but prior evaluations focus mainly on autoregressive architectures. This study examines whether LLMLingua-2 transfers effectively to diffusion large language models (DLLMs), specifically LLaDA-8B-Instruct. We evaluate GSM8K, DUC2004, and ShareGPT using 250 prompts per dataset at an approximate 50\% compression ratio, covering mathematical reasoning, prompt reconstruction, and summarization. Outputs from original, compressed, and reconstructed prompts are compared using exact-match accuracy, BLEU, ROUGE, and BERTScore. Results show that high semantic preservation does not necessarily ensure stable downstream behavior in diffusion models. Summarization remains relatively robust, while mathematical reasoning degrades substantially despite high semantic similarity. Reconstruction further shows that semantically similar prompts may omit reasoning-critical information needed for stable denoising. Overall, compression failures are mainly driven by information omission rather than semantic drift, suggesting that autoregressive prompt compression methods may not transfer uniformly to DLLMs. These findings motivate diffusion-aware compression strategies.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-05-18T06:39:10Z</published>
+    <arxiv:comment>Accepted to appear in The 14th International Conference on Advances in Information Technology (IAIT2026)</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Sterling Huang</name>
+    </author>
+    <author>
+      <name>Abigayle Brown</name>
+    </author>
+    <author>
+      <name>Jiyoo Noh</name>
+    </author>
+    <author>
+      <name>Jiakang Xu</name>
+    </author>
+    <author>
+      <name>Wantong Huo</name>
+    </author>
+    <author>
+      <name>Kaung Myat Kyaw</name>
+    </author>
+    <author>
+      <name>Jonathan Chan</name>
+    </author>
+    <arxiv:doi>10.1145/3816713.3818806</arxiv:doi>
+    <link rel="related" href="https://doi.org/10.1145/3816713.3818806" title="doi"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2608.26175v1</id>
+    <title>Lost in Compression: A Controlled Cross-Lingual Audit of Extractive Prompt Compressors</title>
+    <updated>2026-07-27T08:54:11Z</updated>
+    <link href="https://arxiv.org/abs/2608.26175v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2608.26175v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Extractive prompt compression promises to cut LLM inference costs by removing low-information tokens, and learned compressors such as LLMLingua-2 report strong results on English benchmarks. Most other languages already pay a token premium: the same content costs 1.3-1.8x more tokens than in English. We ask whether compression closes or widens this gap. Using fully parallel data in ten languages spanning five scripts, with controls budget-matched in the target model's tokenizer, we audit four learned compressors against four deterministic baselines, on eleven target models from ten vendors (over 250,000 evaluation calls). Three of the compressors are trained with English supervision (LLMLingua-2 XLM-R/mBERT; Kompress-v2 from the production Headroom stack); the fourth, XProvence, is trained multilingually. First, the transfer gap is real, replicates across target models and compressor backbones, and is strongly rate-dependent: at a 0.33 keep-rate English retains 57-62% of normalized context utilization while Lithuanian retains 10-24% and Chinese essentially none, despite Chinese having the smallest token premium. Second, the gap tracks compression supervision data, not architecture. All three English-trained compressors show it, deterministic methods show no comparable gap, and the multilingually trained XProvence v1 shows none. Its v2 release, retrained on translated data, empties 92% of Chinese contexts at its aggressive threshold without any warning. Third, in a harder long-context setting, aggressive learned compression drives compressed contexts to or below no-context utility in three of five non-English languages. A translate-then-compress pipeline matches or beats native compression at roughly half the token cost in three of five tested languages. We release all code, compressions, and model outputs. Safe compression budgets are much smaller outside English.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-07-27T08:54:11Z</published>
+    <arxiv:comment>17 pages, 6 figures. Code and artifacts: https://github.com/MantasLukauskas/lost-in-compression</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Mantas Lukauskas</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2402.10543v2</id>
+    <title>Strong hallucinations from negation and how to fix them</title>
+    <updated>2024-08-20T08:36:26Z</updated>
+    <link href="https://arxiv.org/abs/2402.10543v2" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2402.10543v2" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Despite great performance on many tasks, language models (LMs) still struggle with reasoning, sometimes providing responses that cannot possibly be true because they stem from logical incoherence. We call such responses \textit{strong hallucinations} and prove that they follow from an LM's computation of its internal representations for logical operators and outputs from those representations. Focusing on negation, we provide a novel solution in which negation is treated not as another element of a latent representation, but as \textit{an operation over an LM's latent representations that constrains how they may evolve}. We show that our approach improves model performance in cloze prompting and natural language inference tasks with negation without requiring training on sparse negative data.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2024-02-16T10:11:20Z</published>
+    <arxiv:comment>Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Findings)</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Nicholas Asher</name>
+    </author>
+    <author>
+      <name>Swarnadeep Bhar</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2509.05486v1</id>
+    <title>The Token Tax: Systematic Bias in Multilingual Tokenization</title>
+    <updated>2025-09-05T20:20:51Z</updated>
+    <link href="https://arxiv.org/abs/2509.05486v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2509.05486v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Tokenization inefficiency imposes structural disadvantages on morphologically complex, low-resource languages, inflating compute resources and depressing accuracy. We evaluate 10 large language models (LLMs) on AfriMMLU (9,000 MCQA items; 5 subjects; 16 African languages) and show that fertility (tokens/word) reliably predicts accuracy. Higher fertility consistently predicts lower accuracy across all models and subjects. We further find that reasoning models (DeepSeek, o1) consistently outperform non-reasoning peers across high and low resource languages in the AfriMMLU dataset, narrowing accuracy gaps observed in prior generations. Finally, translating token inflation to economics, a doubling in tokens results in quadrupled training cost and time, underscoring the token tax faced by many languages. These results motivate morphologically aware tokenization, fair pricing, and multilingual benchmarks for equitable natural language processing (NLP).</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2025-09-05T20:20:51Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <arxiv:journal_ref>Proceedings of the 7th Workshop on African Natural Language Processing (AfricaNLP 2026)</arxiv:journal_ref>
+    <author>
+      <name>Jessica M. Lundin</name>
+    </author>
+    <author>
+      <name>Ada Zhang</name>
+    </author>
+    <author>
+      <name>Nihal Karim</name>
+    </author>
+    <author>
+      <name>Hamza Louzan</name>
+    </author>
+    <author>
+      <name>Victor Wei</name>
+    </author>
+    <author>
+      <name>David Adelani</name>
+    </author>
+    <author>
+      <name>Cody Carroll</name>
+    </author>
+    <arxiv:doi>10.18653/v1/2026.africanlp-main.10</arxiv:doi>
+    <link rel="related" href="https://doi.org/10.18653/v1/2026.africanlp-main.10" title="doi"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2505.00019v1</id>
+    <title>An Empirical Study on Prompt Compression for Large Language Models</title>
+    <updated>2025-04-24T14:15:13Z</updated>
+    <link href="https://arxiv.org/abs/2505.00019v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2505.00019v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Prompt engineering enables Large Language Models (LLMs) to perform a variety of tasks. However, lengthy prompts significantly increase computational complexity and economic costs. To address this issue, we study six prompt compression methods for LLMs, aiming to reduce prompt length while maintaining LLM response quality. In this paper, we present a comprehensive analysis covering aspects such as generation performance, model hallucinations, efficacy in multimodal tasks, word omission analysis, and more. We evaluate these methods across 13 datasets, including news, scientific articles, commonsense QA, math QA, long-context QA, and VQA datasets. Our experiments reveal that prompt compression has a greater impact on LLM performance in long contexts compared to short ones. In the Longbench evaluation, moderate compression even enhances LLM performance. Our code and data is available at https://github.com/3DAgentWorld/Toolkit-for-Prompt-Compression.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2025-04-24T14:15:13Z</published>
+    <arxiv:comment>Accepted by Building Trust Workshop at ICLR 2025</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Zheng Zhang</name>
+    </author>
+    <author>
+      <name>Jinyi Li</name>
+    </author>
+    <author>
+      <name>Yihuai Lan</name>
+    </author>
+    <author>
+      <name>Xiang Wang</name>
+    </author>
+    <author>
+      <name>Hao Wang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2508.02053v2</id>
+    <title>ProCut: LLM Prompt Compression via Attribution Estimation</title>
+    <updated>2025-10-08T04:59:55Z</updated>
+    <link href="https://arxiv.org/abs/2508.02053v2" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2508.02053v2" rel="related" type="application/pdf" title="pdf"/>
+    <summary>In large-scale industrial LLM systems, prompt templates often expand to thousands of tokens as teams iteratively incorporate sections such as task instructions, few-shot examples, and heuristic rules to enhance robustness and coverage. This expansion leads to bloated prompts that are difficult to maintain and incur significant inference latency and serving costs. To address this, we introduce Prompt Compression via Attribution Estimation (ProCut), a flexible, LLM-agnostic, training-free framework that compresses prompts through attribution analysis. ProCut segments prompt templates into semantically meaningful units, quantifies their impact on task performance, and prunes low-utility components. Through extensive experiments on five public benchmark datasets and real-world industrial prompts, we show that ProCut achieves substantial prompt size reductions (78% fewer tokens in production) while maintaining or even slightly improving task performance (up to 62% better than alternative methods). We further introduce an LLM-driven attribution estimator that reduces compression latency by over 50%, and demonstrate that ProCut integrates seamlessly with existing prompt-optimization frameworks to produce concise, high-performing prompts.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2025-08-04T04:44:43Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Zhentao Xu</name>
+    </author>
+    <author>
+      <name>Fengyi Li</name>
+    </author>
+    <author>
+      <name>Albert Chen</name>
+    </author>
+    <author>
+      <name>Xiaofeng Wang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2607.25335v2</id>
+    <title>Every Time I Hire a Linguist, Inference Costs Go Down: On Linguistic Rules as Effective Prompt Compressors</title>
+    <updated>2026-07-29T12:56:44Z</updated>
+    <link href="https://arxiv.org/abs/2607.25335v2" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2607.25335v2" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Prompt compression shortens LLM input to reduce inference cost, yet existing methods score token importance through LM forward passes. It remains questionable whether such nuanced, costly token selection is necessary. Compression requires identifying informative content, a problem that linguistic research has long addressed through cues that can be operationalized as deterministic rules. We therefore ask: can \textbf{linguistic rules alone} serve as effective prompt compressors, without LM-based scoring at compression time?
+  To address this, we conduct offline evolutionary search over lexical, syntactic, semantic, and discourse seeds to find competitive rule combinations. The resulting linguistic compressor requires no LM forward pass at deployment and uses only CPU-side processing for compression. We evaluate it with a dual-path protocol to balance compression quality and reconstruction fidelity.
+  Across short passages, multi-document reasoning, and dialogue-memory QA datasets, evolved compressors achieve performance similar to that of recent advanced prompt-compression strategies. Performance is strongest under light-to-moderate compression and degrades as compression becomes more aggressive, while the Direct and Reconstruction paths exhibit distinct patterns. Evolutionary analysis reveals that effective compression fuses signals across linguistic levels and, as the compression ratio increases, rules shift from token pruning to sentence extraction.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-07-28T06:33:27Z</published>
+    <arxiv:comment>37 pages, 6 figures, under review paper</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Jianfei Ma</name>
+    </author>
+    <author>
+      <name>Zhaoxin Feng</name>
+    </author>
+    <author>
+      <name>Emmanuele Chersoni</name>
+    </author>
+    <author>
+      <name>Si Chen</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2609.13154v1</id>
+    <title>Lexical Prompt Compression for Large Language Models: A Training-Free, Deterministic Pipeline with Empirical Pareto Analysis Across Eleven Task Categories</title>
+    <updated>2026-07-08T17:21:42Z</updated>
+    <link href="https://arxiv.org/abs/2609.13154v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2609.13154v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Recent advances in large language models (LLMs) have made prompts increasingly large and complex. Techniques such as chain-of-thought reasoning (Wei et al., 2022) and in-context learning (Brown et al., 2020) frequently push real-world prompts past several thousand tokens, increasing inference cost and latency. Learned compression methods such as LLMLingua (Jiang et al., 2023) and Selective Context (Li et al., 2023) achieve high compression ratios but require auxiliary language models and are non-deterministic. We ask a complementary question: how far can a training-free, fully deterministic, CPU-only pipeline based on classical lexical NLP be pushed before output quality degrades significantly? Eleven toggleable lexical transformations - stopword removal, filler-phrase deletion, contraction and abbreviation substitution, part-of-speech-based pruning, lemmatization, WordNet-driven synonym shortening, and named-entity preservation - are assembled into a configurable pipeline. Fifteen configurations are evaluated on 1,242 English-only prompts from six sources (Dolly-15k, LMSYS-Chat-1M, WildChat-1M, MMLU, GSM8K, HellaSwag), spanning eleven automatically derived task categories, yielding 18,630 paired GPT-4o-mini completions. Output preservation is measured using BLEU, ROUGE-1/2/L, BERTScore-F1, and SentenceBERT cosine similarity. The most aggressive configuration achieves a mean token reduction of 40.3% (sigma = 9.2) at a BERTScore-F1 of 0.876 against the original-prompt output; a stopword-only configuration achieves 29.6% reduction at 0.913. The compression-versus-fidelity Pareto frontier is characterized per task category, with commonsense reasoning a systematic failure mode under aggressive compression. All code, prompts, and per-cell results are released for reproducibility.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-07-08T17:21:42Z</published>
+    <arxiv:comment>the paper is 27 pages with 10 figures and 4 tables. Code and data for the experiments: https://github.com/shaminchokshi/Lexical-Prompt-Compressor---Research-Experiment-Code. Python package (pip install less-tokens): https://pypi.org/project/less-tokens/</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Shamin Chokshi</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2604.02985v1</id>
+    <title>Prompt Compression in the Wild: Measuring Latency, Rate Adherence, and Quality for Faster LLM Inference</title>
+    <updated>2026-04-03T11:41:53Z</updated>
+    <link href="https://arxiv.org/abs/2604.02985v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2604.02985v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>With the wide adoption of language models for IR -- and specifically RAG systems -- the latency of the underlying LLM becomes a crucial bottleneck, since the long contexts of retrieved passages lead large prompts and therefore, compute increase. Prompt compression, which reduces the size of input prompts while aiming to preserve performance on downstream tasks, has established itself as a cost-effective and low-latency method for accelerating inference in large language models. However, its usefulness depends on whether the additional preprocessing time during generation is offset by faster decoding. We present the first systematic, large-scale study of this trade-off, with thousands of runs and 30,000 queries across several open-source LLMs and three GPU classes. Our evaluation separates compression overhead from decoding latency while tracking output quality and memory usage. LLMLingua achieves up to 18% end-to-end speed-ups, when prompt length, compression ratio, and hardware capacity are well matched, with response quality remaining statistically unchanged across summarization, code generation, and question answering tasks. Outside this operating window, however, the compression step dominates and cancels out the gains. We also show that effective compression can reduce memory usage enough to offload workloads from data center GPUs to commodity cards, with only a 0.3s increase in latency. Our open-source profiler predicts the latency break-even point for each model-hardware setup, providing practical guidance on when prompt compression delivers real-world benefits.</summary>
+    <category term="cs.IR" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-04-03T11:41:53Z</published>
+    <arxiv:comment>Accepted at ECIR 2026 (Full Paper)</arxiv:comment>
+    <arxiv:primary_category term="cs.IR"/>
+    <author>
+      <name>Cornelius Kummer</name>
+    </author>
+    <author>
+      <name>Lena Jurkschat</name>
+    </author>
+    <author>
+      <name>Michael Färber</name>
+    </author>
+    <author>
+      <name>Sahar Vahdati</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2410.11786v2</id>
+    <title>Selection-p: Self-Supervised Task-Agnostic Prompt Compression for Faithfulness and Transferability</title>
+    <updated>2024-10-21T13:11:44Z</updated>
+    <link href="https://arxiv.org/abs/2410.11786v2" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2410.11786v2" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Large Language Models (LLMs) have demonstrated impressive capabilities in a wide range of natural language processing tasks when leveraging in-context learning. To mitigate the additional computational and financial costs associated with in-context learning, several prompt compression methods have been proposed to compress the in-context learning prompts. Despite their success, these methods face challenges with transferability due to model-specific compression, or rely on external training data, such as GPT-4. In this paper, we investigate the ability of LLMs to develop a unified compression method that discretizes uninformative tokens, utilizing a self-supervised pre-training technique. By introducing a small number of parameters during the continual pre-training, the proposed Selection-p produces a probability for each input token, indicating whether to preserve or discard it. Experiments show Selection-p achieves state-of-the-art performance across numerous classification tasks, achieving compression rates of up to 10 times while experiencing only a marginal 0.8% decrease in performance. Moreover, it exhibits superior transferability to different models compared to prior work. Additionally, we further analyze how Selection-p helps maintain performance on in-context learning with long contexts.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2024-10-15T17:05:25Z</published>
+    <arxiv:comment>14 pages, 5 figures, 10 tables, EMNLP 2024 Findings</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Tsz Ting Chung</name>
+    </author>
+    <author>
+      <name>Leyang Cui</name>
+    </author>
+    <author>
+      <name>Lemao Liu</name>
+    </author>
+    <author>
+      <name>Xinting Huang</name>
+    </author>
+    <author>
+      <name>Shuming Shi</name>
+    </author>
+    <author>
+      <name>Dit-Yan Yeung</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2507.11942v1</id>
+    <title>DAC: A Dynamic Attention-aware Approach for Task-Agnostic Prompt Compression</title>
+    <updated>2025-07-16T06:16:06Z</updated>
+    <link href="https://arxiv.org/abs/2507.11942v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2507.11942v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Task-agnostic prompt compression leverages the redundancy in natural language to reduce computational overhead and enhance information density within prompts, especially in long-context scenarios. Existing methods predominantly rely on information entropy as the metric to compress lexical units, aiming to achieve minimal information loss. However, these approaches overlook two critical aspects: (i) the importance of attention-critical tokens at the algorithmic level, and (ii) shifts in information entropy during the compression process. Motivated by these challenges, we propose a dynamic attention-aware approach for task-agnostic prompt compression (DAC). This approach effectively integrates entropy and attention information, dynamically sensing entropy shifts during compression to achieve fine-grained prompt compression. Extensive experiments across various domains, including LongBench, GSM8K, and BBH, show that DAC consistently yields robust and substantial improvements across a diverse range of tasks and LLMs, offering compelling evidence of its efficacy.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2025-07-16T06:16:06Z</published>
+    <arxiv:comment>ACL 2025</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Yi Zhao</name>
+    </author>
+    <author>
+      <name>Zuchao Li</name>
+    </author>
+    <author>
+      <name>Hai Zhao</name>
+    </author>
+    <author>
+      <name>Baoyuan Qi</name>
+    </author>
+    <author>
+      <name>Guoming Liu</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2606.19857v1</id>
+    <title>Large Language Models Do Not Always Need Readable Language</title>
+    <updated>2026-06-18T07:05:19Z</updated>
+    <link href="https://arxiv.org/abs/2606.19857v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2606.19857v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Large language models (LLMs) are commonly prompted and interfaced with human-readable natural language, even when the intended reader is another model. This paper investigates whether semantic information can be encoded in compact, non-standard textual forms that sacrifice human readability while remaining recoverable by LLMs. We refer to this class of model-centric textual representations as BabelTele, approached here not as a fixed protocol but as an empirical probe into LLMs' capacity to generate and interpret such representations. Through readability diagnostics, model likelihood measures, human questionnaires, and downstream task evaluations, we find that BabelTele can substantially depart from ordinary natural language while preserving core semantics for instruction-tuned LLMs. As a task-agnostic representational paradigm, BabelTele demonstrates high information density, maintaining 99.5% semantic fidelity even when the text volume is condensed to 27.9% of its original length. We further evaluate its semantic robustness in cross-model transfer, agent memory, and multi-agent communication. Results suggest that BabelTele can reduce context overhead while generally maintaining reliable downstream performance, although its effectiveness depends on the compressor-reader pair and task setting. These findings indicate that human readability, natural-language typicality, and model-side semantic recoverability can be partially decoupled, opening a path toward model-native representations in future exploration of LLM systems.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-06-18T07:05:19Z</published>
+    <arxiv:comment>23 pages, 10 figures. Preprint</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Jiayi Zhu</name>
+    </author>
+    <author>
+      <name>Haoxuan Peng</name>
+    </author>
+    <author>
+      <name>Junxi Wang</name>
+    </author>
+    <author>
+      <name>Liang Ke</name>
+    </author>
+    <author>
+      <name>Chen Zhang</name>
+    </author>
+    <author>
+      <name>Linfeng Zhang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2502.07717v1</id>
+    <title>Making Language Models Robust Against Negation</title>
+    <updated>2025-02-11T17:18:47Z</updated>
+    <link href="https://arxiv.org/abs/2502.07717v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2502.07717v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Negation has been a long-standing challenge for language models. Previous studies have shown that they struggle with negation in many natural language understanding tasks. In this work, we propose a self-supervised method to make language models more robust against negation. We introduce a novel task, Next Sentence Polarity Prediction (NSPP), and a variation of the Next Sentence Prediction (NSP) task. We show that BERT and RoBERTa further pre-trained on our tasks outperform the off-the-shelf versions on nine negation-related benchmarks. Most notably, our pre-training tasks yield between 1.8% and 9.1% improvement on CondaQA, a large question-answering corpus requiring reasoning over negation.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2025-02-11T17:18:47Z</published>
+    <arxiv:comment>Accepted to NAACL 2025</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>MohammadHossein Rezaei</name>
+    </author>
+    <author>
+      <name>Eduardo Blanco</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2503.19114v2</id>
+    <title>Understanding and Improving Information Preservation in Prompt Compression for LLMs</title>
+    <updated>2025-10-10T09:52:17Z</updated>
+    <link href="https://arxiv.org/abs/2503.19114v2" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2503.19114v2" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Recent advancements in large language models (LLMs) have enabled their successful application to a broad range of tasks. However, in information-intensive tasks, the prompt length can grow fast, leading to increased computational requirements, performance degradation, and induced biases from irrelevant or redundant information. Recently, various prompt compression techniques have been introduced to optimize the trade-off between reducing input length and retaining performance. We propose a holistic evaluation framework that allows for in-depth analysis of prompt compression methods. We focus on three key aspects, besides compression ratio: (i) downstream task performance, (ii) grounding in the input context, and (iii) information preservation. Using our framework, we analyze state-of-the-art soft and hard compression methods and show that some fail to preserve key details from the original prompt, limiting performance on complex tasks. By identifying these limitations, we are able to improve one soft prompting method by controlling compression granularity, achieving up to +23% in downstream performance, +8 BERTScore points in grounding, and 2.7x more entities preserved in compression. Ultimately, we find that the best effectiveness/compression rate trade-off is achieved with soft prompting combined with sequence-level training.The code is available at https://github.com/amazon-science/information-preservation-in-prompt-compression.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.IR" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2025-03-24T20:06:11Z</published>
+    <arxiv:comment>Accepted to EMNLP 2025 (Findings), 22 pages, 6 figures, 24 tables</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Weronika Łajewska</name>
+    </author>
+    <author>
+      <name>Momchil Hardalov</name>
+    </author>
+    <author>
+      <name>Laura Aina</name>
+    </author>
+    <author>
+      <name>Neha Anna John</name>
+    </author>
+    <author>
+      <name>Hang Su</name>
+    </author>
+    <author>
+      <name>Lluís Màrquez</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2603.23527v1</id>
+    <title>Compression Method Matters: Benchmark-Dependent Output Dynamics in LLM Prompt Compression</title>
+    <updated>2026-03-06T22:39:27Z</updated>
+    <link href="https://arxiv.org/abs/2603.23527v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2603.23527v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Prompt compression is often evaluated by input-token reduction, but its real deployment impact depends on how compression changes output length and total inference cost. We present a controlled replication and extension study of benchmark-dependent output dynamics under aggressive compression, covering 5,400 API calls across three benchmarks and multiple providers. To explain conflicting prior observations, we formalize instruction survival probability (Psi), a structural metric that captures whether task-critical prompt segments remain after truncation. Results show a strong benchmark effect: under r=0.3, DeepSeek exhibits severe output expansion on MBPP (56x, Psi approx 0.15) but substantially lower expansion on HumanEval (5x, Psi approx 0.72), while GPT-4o-mini is comparatively stable across benchmarks. This reconciles the apparent discrepancy between previously reported extreme explosion and lower replication effects by identifying prompt structure, not provider identity alone, as the primary moderator. We introduce the Compression Robustness Index (CRI) for cross-benchmark evaluation and show that single-benchmark assessments can produce misleading conclusions about compression safety and efficiency. To contextualize energy claims, we incorporate companion direct NVML measurements from rented RunPod GPUs and show that token savings can overstate joule savings. These findings motivate benchmark-diverse testing and structure-aware compression policies for reliable, energy-conscious LLM deployment.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-03-06T22:39:27Z</published>
+    <arxiv:comment>19 pages. Includes figures and tables. Companion code/data repository and direct NVML calibration dataset are cited in manuscript</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Warren Johnson</name>
+    </author>
+  </entry>
+</feed>
