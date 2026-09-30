@@ -208,8 +208,9 @@ văn bản ─► chuẩn hoá Unicode (NFC) ─► tách từ (RDRSegmenter) + 
 ### 3.3 Encoder và huấn luyện
 - **XLM-R-large** (560M, cùng backbone LLMLingua-2): dùng cho **mọi kiểm định H1–H3**.
 - PhoBERT-base: không thuộc phần chính; chỉ đưa vào phụ lục nếu còn thời gian.
-- Loss BCE cấp từ với target mềm, có trọng số lớp (tỉ lệ giữ ≈ 30–50%), AdamW, 3 epoch, chọn checkpoint theo F1
-  nhãn trên dev (không dùng reader). Chạy 3 seed; báo cáo trung bình ± độ lệch chuẩn.
+- Loss BCE cấp từ với target mềm, có trọng số lớp (tỉ lệ giữ ≈ 30–50%), AdamW, 3 epoch, chọn checkpoint theo
+  loss BCE trên dev (dùng được với nhãn mềm; F1 trên các nhãn cứng báo cáo kèm), không dùng reader. Chạy 3 seed;
+  báo cáo trung bình ± độ lệch chuẩn.
 - **Kiểm tra nhanh checkpoint:** F1 trên nhãn dev chưa đủ (E6 của LACC: PR-AUC 0.84 nhưng ngang ngẫu nhiên ở tác
   vụ). Sau khi chọn checkpoint, chạy 200 mẫu dev qua reader: checkpoint phải thắng truncation và đối chứng tra từ
   (§4.2) trước khi đánh giá đầy đủ. Đây là kiểm tra đạt/không đạt trên dev, không dùng để chọn checkpoint.
@@ -405,17 +406,23 @@ Kiểm định:
   Context cần thêm một LM để nén.
 - Tổng dự trù **3–5 GPU-ngày** trên H100, tính cả gỡ lỗi.
 
-**Cấu trúc code gợi ý** (khung đánh giá tái dùng từ `../vncompress`):
+**Cấu trúc code** (đã cài đặt; cách chạy ở `README.md`). Các cơ chế của khung đánh giá LACC (bootstrap theo
+cụm, kiểm tra rò rỉ, các arm mốc) được viết lại gọn trong repo này, không import từ `../vncompress`:
 ```
 viword/
-  segment.py      # VnCoreNLP wrapper, word↔syllable↔subword alignment
-  protect.py      # danh sách (từ, POS) + luật khử nhập nhằng + NER → tập P
-  distill.py      # gọi LLM thầy, căn chỉnh, nhãn cấp âm tiết + nhãn mềm cấp từ, kiểm tra rò rỉ
-  train.py        # XLM-R word classifier
-  select.py       # knapsack s/c_T^α, DP chính xác
-  baselines.py    # LLMLingua(-2), Selective Context, Lead-k, truncation, chọn câu, stopword, random, tra từ
-  eval.py         # VietNews / ViNLI / ViMMRC / Belebele × readers (vLLM), bootstrap theo cụm, MDE
-  diagnose.py     # CBR, RR, retention, fertility, CV_T (§4.0)
+  segment.py      # tách từ (VnCoreNLP/underthesea/pyvi), mặt nạ âm tiết, render, căn chỉnh
+  protect.py      # tập P theo (từ, POS, ngữ cảnh) + luật khử nhập nhằng
+  select.py       # tham lam s/c_T^α + bước lấp, knapsack DP chính xác, cắt theo độ dài thật
+  model.py        # encoder chấm điểm theo âm tiết, cửa sổ trượt, đối chứng tra từ
+  compressor.py   # giao diện chung; ViWord-C, LLMLingua-2-vi và các ô 2×2
+  baselines.py    # Lead-k, truncation, random, stopword, luật từ vựng, chọn câu, Selective Context,
+                  # LLMLingua(-2), LongLLMLingua, probe phủ định, precomputed (cận trên thầy)
+  distill.py      # prompt thầy, nhãn âm tiết + nhãn mềm cấp từ, kiểm tra rò rỉ
+  train.py        # huấn luyện XLM-R
+  diagnose.py     # CBR (+ mốc ngẫu nhiên), RR, retention, fertility, CV_T (§4.0)
+  data.py, eval.py, stats.py   # dữ liệu, reader vLLM + metric, bootstrap theo cụm / Holm / McNemar / MDE
+scripts/          # segment_data, distill, train, diagnose, evaluate, analyze
+tests/            # test CPU
 ```
 
 ## 6. Quan hệ với pilot LACC

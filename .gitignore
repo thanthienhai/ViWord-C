@@ -216,3 +216,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ViWord-C: data, downloaded models and checkpoints are not versioned
+data/*
+!data/README.md
+models/
+runs/
+results/eval/
