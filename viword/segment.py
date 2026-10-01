@@ -99,8 +99,9 @@ def align_compressed(words: list[Word], compressed_text: str) -> tuple[list[bool
 
     Both sides are split into the same letter/punctuation tokens and matched with
     difflib (longest matching blocks). A syllable counts as kept if any of its tokens is
-    matched. Returns (syllable_mask, unmatched_ratio); a high unmatched ratio means the
-    compressor rewrote text instead of only deleting it (used to filter teacher outputs).
+    matched. Returns (syllable_mask, unmatched_ratio), where unmatched_ratio is the share of
+    output *words* not found in the source; a high value means the compressor rewrote text
+    instead of only deleting it (used to filter teacher outputs).
     """
     source, owner = [], []
     for si, syllable in enumerate(syllables_of(words)):
@@ -110,12 +111,14 @@ def align_compressed(words: list[Word], compressed_text: str) -> tuple[list[bool
     target = simple_tokens(compressed_text)
 
     mask = [False] * len(syllables_of(words))
-    matched = 0
+    matched_target = set()
     for block in SequenceMatcher(a=source, b=target, autojunk=False).get_matching_blocks():
         for k in range(block.size):
             mask[owner[block.a + k]] = True
-        matched += block.size
-    unmatched_ratio = 1.0 - matched / len(target) if target else 0.0
+            matched_target.add(block.b + k)
+    # rewriting is measured on words only: inserted punctuation does not change the labels
+    words = [k for k, t in enumerate(target) if t[0].isalnum()]
+    unmatched_ratio = sum(k not in matched_target for k in words) / len(words) if words else 0.0
     return mask, unmatched_ratio
 
 

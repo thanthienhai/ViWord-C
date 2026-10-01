@@ -39,3 +39,11 @@ def test_align_is_case_and_spacing_insensitive():
 def test_json_roundtrip(sentence):
     doc = [sentence, [W("Tốt", "A"), W(".", "CH")]]
     assert doc_from_json(doc_to_json(doc)) == doc
+
+
+def test_inserted_punctuation_is_not_rewriting(sentence):
+    # the teacher often joins fragments with commas; only inserted words count as rewriting
+    _, unmatched = align_compressed(sentence, "Học sinh, không đi, Hà Nội.")
+    assert unmatched == 0.0
+    _, unmatched = align_compressed(sentence, "Học sinh không đi trường Hà Nội")
+    assert unmatched == 1 / 7

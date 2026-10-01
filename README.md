@@ -34,7 +34,8 @@ viword/                  thư viện
   diagnose.py            CBR (+ mốc ngẫu nhiên), RR, tỉ lệ giữ theo tầng, fertility/CV_T            §2.2
   data.py, eval.py       dữ liệu chuẩn hoá, prompt reader, ROUGE cho tiếng Việt, reader vLLM        §4.1
   stats.py               bootstrap theo cụm, Holm, McNemar, non-inferiority, MDE                    §4.3
-scripts/                 các bước chạy (xem bên dưới)
+scripts/                 prepare_data, leak_filter, segment_data, teacher_compress, distill, train,
+                         diagnose, gate_report, evaluate, analyze; run_pipeline.sh nối tất cả
 tests/                   test CPU, không cần GPU, mô hình hay Java
 data/                    dữ liệu (không đưa lên git), xem data/README.md
 ```
@@ -47,7 +48,7 @@ Python ≥ 3.10. Mỗi nhóm phụ thuộc là một extra để chỉ cài ph�
 pip install -e ".[dev]"                      # lõi + test
 pip install -e ".[seg,model,baselines]"      # tách từ, encoder, LLMLingua
 pip install -e ".[eval,teacher]"             # reader vLLM (Linux + GPU), LLM thầy qua API
-pytest -q                                    # 39 test, chạy trên CPU
+pytest -q                                    # 40 test, chạy trên CPU
 ```
 
 VnCoreNLP cần Java ≥ 1.8; mô hình được tải tự động vào `models/vncorenlp/` ở lần chạy đầu. Nguồn tải là
@@ -55,66 +56,60 @@ raw.githubusercontent.com và có thể rất chậm; nếu vậy, dùng `--segm
 đặt `PYTHONIOENCODING=utf-8` để in được tiếng Việt ra console. vLLM không chạy trên Windows: khi đó
 `scripts/evaluate.py --backend hf` dùng `transformers` (chậm hơn, chỉ nên dùng cho mô hình nhỏ và smoke test).
 
-## Dữ liệu
+## Chạy toàn bộ pipeline
 
-Mỗi tác vụ được chuẩn hoá về một file JSONL (định dạng ở [`data/README.md`](data/README.md)), rồi tách từ **một
-lần** và lưu lại:
+`scripts/run_pipeline.sh` chạy từng giai đoạn; mỗi giai đoạn chỉ đọc file do giai đoạn trước ghi, nên có thể chạy
+các giai đoạn trên các máy khác nhau. Cấu hình (LLM thầy, bộ tách từ, reader…) đặt qua biến môi trường ở đầu file.
 
 ```bash
-python -c "from viword.data import belebele_from_hub; belebele_from_hub('data/tasks/belebele.jsonl')"
-python scripts/segment_data.py --input data/tasks/belebele.jsonl --field context \
-    --output data/segmented/belebele.jsonl
-python scripts/segment_data.py --input data/tasks/vinli_test.jsonl --field premise \
-    --output data/segmented/vinli_test.jsonl
+bash scripts/run_pipeline.sh data segment diagnose   # tuần cổng, không cần reader (G1 phần CBR, G2 phần đếm, G5)
+bash scripts/run_pipeline.sh teacher_check           # thầy nén 200 mẫu dev mỗi tác vụ -> cận trên / cổng G4
+bash scripts/run_pipeline.sh teacher distill train   # chưng cất + 3 seed × 2 loại nhãn (cần GPU lớn)
+READER_BACKEND=vllm bash scripts/run_pipeline.sh eval analyze
 ```
+
+LLM thầy mặc định là `icmodel/icom-model-llm-ic-v3.8-27b` tại `http://172.16.9.11:30048/v1` (vLLM, API tương thích
+OpenAI). Thầy chỉ cần trả về văn bản; không dùng logit.
+
+## Dữ liệu
+
+`scripts/prepare_data.py` tải và chuẩn hoá mọi bộ dữ liệu về định dạng ở [`data/README.md`](data/README.md):
+
+| Tác vụ | Nguồn | Ghi chú |
+|---|---|---|
+| Belebele | `facebook/belebele` (vie_Latn + eng_Latn) | 900 câu hỏi / 488 đoạn; ghép Việt–Anh theo (link, số câu hỏi) |
+| ViNLI | `presencesw/vinli_4_label` (bản sao không chính thức) | test: 2.991 cặp nhưng chỉ 377 premise |
+| ViMMRC | `ura-hcmut/ViMMRC` (bản chính thức `uitnlp/vimmrc2.0` bị gated) | đã loại câu hỏi về bài thơ; test chỉ 69 đoạn |
+| VietNews | `nam194/vietnews` | bản gốc đã tách từ (`Cơ_quan`), được trả về văn bản thường; lấy mẫu 1.000 bài |
+| Đoạn chưng cất | VietNews train + Wikipedia vi (20231101) | 300–1.500 âm tiết, trọn câu; 5.000 đoạn mỗi nguồn |
+
+Mỗi file được tách từ **một lần** (`scripts/segment_data.py`); các văn bản trùng nhau (premise ViNLI) chỉ tách một lần.
 
 ## Tuần cổng: chẩn đoán (DATN §4.0)
 
-Không cần huấn luyện. Đo CBR, tỉ lệ giữ hư từ, chi phí token và số premise có phủ định:
-
-```bash
-python scripts/diagnose.py --task vinli --data data/tasks/vinli_test.jsonl \
-    --segmented data/segmented/vinli_test.jsonl --limit 500 \
-    --budget-tokenizer Qwen/Qwen2.5-7B-Instruct \
-    --cost-tokenizers Qwen/Qwen2.5-7B-Instruct meta-llama/Llama-3.1-8B-Instruct Viet-Mistral/Vistral-7B-Chat \
-    --methods random lead truncation llmlingua2 \
-        scored:model=microsoft/llmlingua-2-xlm-roberta-large-meetingbank,unit=syllable,name=llmlingua2_syl \
-        scored:model=microsoft/llmlingua-2-xlm-roberta-large-meetingbank,unit=word,name=llmlingua2_wordpool \
-    --rr-model xlm-roberta-large --out results/diagnose/vinli.json
-```
-
-Điểm tác vụ cho các cổng G1, G3, G4 lấy từ `scripts/evaluate.py` với `--limit 500` (xem phần Evaluation).
+`diagnose.py --unique-clusters` đếm mỗi tài liệu nguồn một lần. Kết quả ghi vào `results/diagnose/*.json`;
+`scripts/gate_report.py` đối chiếu với ngưỡng các cổng G1 (phần CBR), G2 (phần đếm) và G5. Điểm tác vụ cho các cổng
+G1, G3, G4 lấy từ giai đoạn `eval` với `LIMIT=500`.
 
 ## Training
 
-1. **Chưng cất nhãn từ LLM thầy** (§3.2). Thầy được gọi qua API tương thích OpenAI, ví dụ
-   `vllm serve Qwen/Qwen2.5-72B-Instruct-AWQ --port 8000`. Kiểm tra thầy trước (cổng G4) bằng `--limit 200
-   --save-compressions results/teacher_dev.jsonl`, rồi mới chạy toàn bộ:
+1. **Chưng cất nhãn từ LLM thầy** (§3.2), gồm 3 bước:
+   - `leak_filter.py`: bỏ đoạn trùng n-gram với tập đánh giá, **trước** khi gọi API;
+   - `teacher_compress.py`: gọi thầy song song, chạy lại được khi bị ngắt;
+   - `distill.py`: căn chỉnh và dựng nhãn; bỏ đầu ra viết lại (> 10% chữ không có trong nguồn) hoặc không nén
+     (giữ > 90%).
 
-   ```bash
-   python scripts/segment_data.py --input data/distill/paragraphs.jsonl --field text \
-       --output data/segmented/paragraphs.jsonl
-   python scripts/distill.py --paragraphs data/distill/paragraphs.jsonl \
-       --segmented data/segmented/paragraphs.jsonl --eval-files data/tasks/*.jsonl \
-       --model Qwen/Qwen2.5-72B-Instruct-AWQ --output data/distill/distilled.jsonl
-   ```
+   Smoke test 19 đoạn: 79% đầu ra hợp lệ; chính thầy cắt đôi ~9% từ ghép (nên dùng nhãn mềm).
 
-2. **Huấn luyện encoder** (§3.3), 3 seed cho mỗi loại nhãn:
-
-   ```bash
-   for s in 0 1 2; do
-     python scripts/train.py --distilled data/distill/distilled.jsonl --label-unit word     --out runs/viword_s$s          --seed $s
-     python scripts/train.py --distilled data/distill/distilled.jsonl --label-unit syllable --out runs/llmlingua2vi_s$s --seed $s
-   done
-   ```
-
-   Siêu tham số mặc định: XLM-R-large, AdamW lr 1e-5, 3 epoch, batch 8, cửa sổ 512 subword, BCE có trọng số lớp
-   dương (1−p)/p, chọn checkpoint theo loss trên dev (500 đoạn tách theo id, cố định).
+2. **Huấn luyện encoder** (§3.3), 3 seed cho mỗi loại nhãn (giai đoạn `train`). Siêu tham số mặc định: XLM-R-large,
+   AdamW lr 1e-5, 3 epoch, batch 8, cửa sổ 512 subword, BCE có trọng số lớp dương (1−p)/p, chọn checkpoint theo loss
+   trên dev (500 đoạn tách theo id, cố định). Cần GPU ≥ 24 GB.
 
 ## Evaluation
 
 Một lần chạy = một tác vụ × một reader. Bước nén và bước đọc chạy tách nhau để không tranh GPU, và bản nén được
-lưu lại (`*.compressed.jsonl`) để tái sử dụng.
+lưu lại (`*.compressed.jsonl`) để tái sử dụng. Reader có ba backend: `vllm` (mặc định), `api` (server tương thích
+OpenAI, thêm `--base-url` và `--tokenizer`), `hf` (transformers, cho smoke test). Không dùng LLM thầy làm reader.
 
 ```bash
 python scripts/evaluate.py --task belebele --data data/tasks/belebele.jsonl \

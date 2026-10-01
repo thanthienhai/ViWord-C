@@ -10,30 +10,44 @@
 """
 from __future__ import annotations
 
+import re
+
 from .segment import Document, align_compressed, flatten, simple_tokens
 
+# The target length is given as a syllable count: with a percentage the teacher produced the
+# same length for 1/3 and 1/5 (pilot on 30 dev texts, see README "Ghi chú cài đặt").
 TEACHER_PROMPT = """Bạn là một bộ nén văn bản. Hãy rút gọn văn bản dưới đây bằng cách CHỈ XOÁ bớt từ.
 Quy tắc:
-- Không thay đổi thứ tự các từ còn lại.
-- Không thêm từ mới, không viết lại, không đổi từ đồng nghĩa, không dịch.
+- Mỗi từ trong kết quả phải có trong văn bản gốc, giữ nguyên thứ tự và giữ nguyên cách viết.
+- Không thêm từ mới, không thêm dấu câu mới, không viết lại, không viết tắt, không đổi từ đồng nghĩa, không dịch.
 - Giữ lại những thông tin quan trọng nhất (sự kiện, con số, tên riêng, phủ định).
-- Độ dài sau khi rút gọn khoảng {percent}% số từ của văn bản gốc.
+- Văn bản gốc có {n} âm tiết. Kết quả phải có khoảng {target} âm tiết (không quá {upper}).
 Chỉ trả về văn bản đã rút gọn, không giải thích.
 
 Văn bản:
 {text}"""
 
 
+def teacher_prompt(text: str, rate: float) -> str:
+    n = len(text.split())
+    target = max(1, round(n * rate))
+    return TEACHER_PROMPT.format(n=n, target=target, upper=round(target * 1.1), text=text)
+
+
 def teacher_compress(client, model: str, text: str, rate: float, max_tokens: int = 4096) -> str:
-    """One deletion-only compression by the teacher through an OpenAI-compatible API
-    (a local `vllm serve` endpoint or OpenAI). Greedy decoding."""
+    """One deletion-only compression by the teacher through an OpenAI-compatible chat API
+    (a `vllm serve` endpoint or OpenAI). Only the output text is used, no logits.
+    Greedy decoding; thinking mode is disabled (vLLM `chat_template_kwargs`, ignored by
+    servers that do not support it) and any leftover <think> block is removed."""
     response = client.chat.completions.create(
         model=model,
-        messages=[{"role": "user", "content": TEACHER_PROMPT.format(percent=round(100 * rate), text=text)}],
+        messages=[{"role": "user", "content": teacher_prompt(text, rate)}],
         temperature=0.0,
         max_tokens=max_tokens,
+        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )
-    return response.choices[0].message.content.strip()
+    content = response.choices[0].message.content or ""
+    return re.sub(r"<think>.*?</think>", "", content, flags=re.S).strip()
 
 
 def make_labels(doc: Document, compressed: str) -> dict:

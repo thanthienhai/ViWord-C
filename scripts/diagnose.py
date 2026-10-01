@@ -46,13 +46,18 @@ def main():
     ap.add_argument("--budget-tokenizer", required=True, help="tokenizer of the main reader")
     ap.add_argument("--cost-tokenizers", nargs="*", default=[])
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--unique-clusters", action="store_true", help="keep one example per source document")
     ap.add_argument("--rr-model", default=None, help="fill-mask model for RR, e.g. xlm-roberta-large")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
     from transformers import AutoTokenizer, pipeline
 
-    examples = load_task(args.task, args.data, args.limit)
+    examples = load_task(args.task, args.data)
+    if args.unique_clusters:  # count every source document once (Belebele passages, ViNLI premises)
+        seen = set()
+        examples = [ex for ex in examples if not (ex.cluster in seen or seen.add(ex.cluster))]
+    examples = examples[:args.limit]
     contexts = load_contexts(examples, args.segmented)
     counter = TokenCounter(AutoTokenizer.from_pretrained(args.budget_tokenizer))
     mlm = pipeline("fill-mask", model=args.rr_model) if args.rr_model else None

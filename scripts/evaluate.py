@@ -20,7 +20,7 @@ import os
 from tqdm import tqdm
 
 from viword.data import load_contexts, load_task, read_jsonl, write_jsonl
-from viword.eval import MAX_NEW_TOKENS, HFReader, VLLMReader, build_prompt, parse_prediction, score
+from viword.eval import MAX_NEW_TOKENS, APIReader, HFReader, VLLMReader, build_prompt, parse_prediction, score
 from viword.methods import build_compressor
 from viword.select import TokenCounter
 
@@ -30,7 +30,7 @@ UNCOMPRESSED = {"none", "no_context"}
 def compress_all(args, examples, contexts) -> list[dict]:
     from transformers import AutoTokenizer
 
-    counter = TokenCounter(AutoTokenizer.from_pretrained(args.reader))
+    counter = TokenCounter(AutoTokenizer.from_pretrained(args.tokenizer or args.reader))
     rows, cache = [], {}
     for spec in args.methods:
         compressor = build_compressor(spec, cache)
@@ -60,8 +60,12 @@ def main():
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--out", required=True)
     ap.add_argument("--max-model-len", type=int, default=8192)
-    ap.add_argument("--backend", default="vllm", choices=["vllm", "hf"],
-                    help="hf = plain transformers, for smoke tests or where vLLM is unavailable")
+    ap.add_argument("--backend", default="vllm", choices=["vllm", "hf", "api"],
+                    help="hf = plain transformers (smoke tests, no vLLM); api = OpenAI-compatible server")
+    ap.add_argument("--base-url", default=None, help="for --backend api")
+    ap.add_argument("--tokenizer", default=None,
+                    help="HF id of the reader's tokenizer, if --reader is not a HF id (api backend)")
+    ap.add_argument("--workers", type=int, default=16, help="parallel requests for --backend api")
     args = ap.parse_args()
 
     examples = load_task(args.task, args.data, args.limit)
@@ -85,6 +89,8 @@ def main():
     by_id = {ex.id: ex for ex in examples}
     if args.backend == "vllm":
         reader = VLLMReader(args.reader, max_model_len=args.max_model_len)
+    elif args.backend == "api":
+        reader = APIReader(args.reader, args.base_url, args.tokenizer or args.reader, workers=args.workers)
     else:
         reader = HFReader(args.reader)
     task = examples[0].task

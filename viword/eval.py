@@ -116,6 +116,35 @@ class HFReader:
         return outputs
 
 
+class APIReader:
+    """A reader served behind an OpenAI-compatible chat API (e.g. `vllm serve`), queried in
+    parallel. `tokenizer` is the Hugging Face id of the reader's tokenizer, used for budgets.
+    Do not use the teacher model as a reader: the teacher would grade its own compressions."""
+
+    def __init__(self, model: str, base_url: str, tokenizer: str, api_key: str = "EMPTY", workers: int = 16):
+        from openai import OpenAI
+        from transformers import AutoTokenizer
+
+        self.name = model
+        self.client = OpenAI(base_url=base_url, api_key=api_key, max_retries=5, timeout=600)
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer)
+        self.workers = workers
+
+    def _one(self, prompt: str, max_new_tokens: int) -> str:
+        response = self.client.chat.completions.create(
+            model=self.name, messages=[{"role": "user", "content": prompt}], temperature=0.0,
+            max_tokens=max_new_tokens, extra_body={"chat_template_kwargs": {"enable_thinking": False}})
+        return re.sub(r"<think>.*?</think>", "", response.choices[0].message.content or "", flags=re.S)
+
+    def generate(self, prompts: list[str], max_new_tokens: int) -> list[str]:
+        from concurrent.futures import ThreadPoolExecutor
+
+        from tqdm import tqdm
+
+        with ThreadPoolExecutor(self.workers) as pool:
+            return list(tqdm(pool.map(lambda p: self._one(p, max_new_tokens), prompts), total=len(prompts)))
+
+
 class VLLMReader:
     """A target LLM served with vLLM (offline). Thinking mode is always disabled."""
 
