@@ -8,6 +8,7 @@ non-ASCII character, which silently breaks Vietnamese.
 """
 from __future__ import annotations
 
+import os
 import re
 from collections import Counter
 
@@ -152,6 +153,8 @@ class VLLMReader:
     def __init__(self, model: str, max_model_len: int = 8192, **kwargs):
         from vllm import LLM
 
+        # lower VIWORD_VLLM_GPU_UTIL (e.g. 0.7) if the GPU is shared or runs out of memory
+        kwargs.setdefault("gpu_memory_utilization", float(os.environ.get("VIWORD_VLLM_GPU_UTIL", 0.9)))
         self.name = model
         self.llm = LLM(model=model, max_model_len=max_model_len, **kwargs)
         self.tokenizer = self.llm.get_tokenizer()

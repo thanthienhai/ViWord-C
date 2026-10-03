@@ -77,9 +77,11 @@ step_check_data() {
 
 step_teacher_gate() {
   log "gate G4: teacher vs truncation on 200 dev examples per task ($READER)"
+  rm -f results/gate/g4_*.md "$OUT"/g4_*.md  # a stale report must not hide a failed run
   READER="$READER" READER_BACKEND=vllm bash scripts/run_pipeline.sh teacher_gate \
     2>&1 | tee -a "$OUT/teacher_gate.log" | grep -E "^(- |->|  teacher|## )|Error|Traceback" || true
   cp results/gate/g4_*.md results/gate/teacher_review_*.md "$OUT"/ 2>/dev/null || true
+  ls "$OUT"/g4_*.md >/dev/null 2>&1 || log "teacher_gate FAILED (no g4 report), see $OUT/teacher_gate.log; continuing"
 }
 
 step_distill() {
@@ -141,7 +143,7 @@ step_analyze() {
   log "analysis"
   python scripts/analyze.py --rows "$OUT"/belebele_rows.jsonl "$OUT"/vinli_rows.jsonl \
     --target viword --reference llmlingua2vi --n-boot 2000 | tee "$OUT/analysis.md"
-  echo -e "\nSmoke test done. Send back the folder $OUT (logs, analysis.md, *_rows.jsonl)."
+  log "Smoke test done. Send back the folder $OUT (logs, analysis.md, *_rows.jsonl)"
 }
 
 steps=("$@")
