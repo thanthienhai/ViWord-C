@@ -6,20 +6,23 @@
 # trends. Small on purpose: 1 seed, 1 epoch, a subset of the distilled data, 200 Belebele
 # questions and 300 ViNLI pairs. The numbers are NOT results for the paper.
 #
-# Data (not in git) comes from the private Hugging Face dataset repo HF_DATA_REPO, pushed from
-# the data-preparation machine with `python scripts/hf_data.py push --repo <user>/viword-c-data`.
+# Data (not in git) comes from the private Hugging Face dataset repo HF_DATA_REPO, pinned to the
+# commit HF_DATA_REVISION so every run uses the same data (pushed from the data-preparation
+# machine with `python scripts/hf_data.py push --repo <user>/viword-c-data`).
 # Needs `huggingface-cli login` (or HF_TOKEN) on this machine.
 #
 # Usage (from the repository root):
 #   bash scripts/smoke_h100.sh            # everything
 #   bash scripts/smoke_h100.sh setup      # only create the environment
 #   bash scripts/smoke_h100.sh train eval # selected steps
+#   bash scripts/smoke_h100.sh teacher_gate   # only gate G4 (teacher vs truncation on dev)
 # Settings via environment variables, e.g. GPU=1 N_PARAGRAPHS=2000 bash scripts/smoke_h100.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 GPU=${GPU:-0}
-HF_DATA_REPO=${HF_DATA_REPO:-}            # e.g. thanthienhai/viword-c-data
+HF_DATA_REPO=${HF_DATA_REPO:-thanthienhai/viword-c-data}
+HF_DATA_REVISION=${HF_DATA_REVISION:-ee91d9e2ecfc96735d8e51a9a400e512b621f279}  # data of 2026-10-01
 VENV=${VENV:-.venv}
 ENCODER=${ENCODER:-xlm-roberta-large}
 READER=${READER:-Qwen/Qwen2.5-7B-Instruct}
@@ -58,16 +61,25 @@ activate() {
 
 step_check_data() {
   if [ -n "$HF_DATA_REPO" ]; then
-    log "pull data from $HF_DATA_REPO"
-    python scripts/hf_data.py pull --repo "$HF_DATA_REPO"
+    log "pull data from $HF_DATA_REPO @ $HF_DATA_REVISION"
+    python scripts/hf_data.py pull --repo "$HF_DATA_REPO" --revision "$HF_DATA_REVISION"
   fi
   log "check data"
   for f in data/tasks/belebele.jsonl data/tasks/vinli_test.jsonl data/segmented/belebele.jsonl \
            data/segmented/vinli_test.jsonl data/distill/paragraphs_clean.jsonl \
-           data/segmented/paragraphs_clean.jsonl data/distill/teacher.jsonl; do
+           data/segmented/paragraphs_clean.jsonl data/distill/teacher.jsonl \
+           data/tasks/{vinli,vimmrc,vietnews}_dev.jsonl data/segmented/{vinli,vimmrc,vietnews}_dev.jsonl \
+           results/teacher_dev/{vinli,vimmrc,vietnews}_dev.jsonl; do
     [ -s "$f" ] || { echo "missing $f (set HF_DATA_REPO, see the top of this script)"; exit 1; }
     echo "$(wc -l < "$f") $f"
   done
+}
+
+step_teacher_gate() {
+  log "gate G4: teacher vs truncation on 200 dev examples per task ($READER)"
+  READER="$READER" READER_BACKEND=vllm bash scripts/run_pipeline.sh teacher_gate \
+    2>&1 | tee -a "$OUT/teacher_gate.log" | grep -E "^(- |->|  teacher|## )|Error|Traceback" || true
+  cp results/gate/g4_*.md results/gate/teacher_review_*.md "$OUT"/ 2>/dev/null || true
 }
 
 step_distill() {
@@ -133,7 +145,7 @@ step_analyze() {
 }
 
 steps=("$@")
-[ ${#steps[@]} -gt 0 ] || steps=(setup check_data distill train eval analyze)
+[ ${#steps[@]} -gt 0 ] || steps=(setup check_data teacher_gate distill train eval analyze)
 for s in "${steps[@]}"; do
   [ "$s" = setup ] || activate
   "step_$s"

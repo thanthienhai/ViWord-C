@@ -48,7 +48,7 @@ Python ≥ 3.10. Mỗi nhóm phụ thuộc là một extra để chỉ cài ph�
 pip install -e ".[dev]"                      # lõi + test
 pip install -e ".[seg,model,baselines]"      # tách từ, encoder, LLMLingua
 pip install -e ".[eval,teacher]"             # reader vLLM (Linux + GPU), LLM thầy qua API
-pytest -q                                    # 40 test, chạy trên CPU
+pytest -q                                    # 42 test, chạy trên CPU
 ```
 
 VnCoreNLP cần Java ≥ 1.8; mô hình được tải tự động vào `models/vncorenlp/` ở lần chạy đầu. Nguồn tải là
@@ -64,6 +64,7 @@ các giai đoạn trên các máy khác nhau. Cấu hình (LLM thầy, bộ tác
 ```bash
 bash scripts/run_pipeline.sh data segment diagnose   # tuần cổng, không cần reader (G1 phần CBR, G2 phần đếm, G5)
 bash scripts/run_pipeline.sh teacher_check           # thầy nén 200 mẫu dev mỗi tác vụ -> cận trên / cổng G4
+bash scripts/run_pipeline.sh teacher_gate gate_eval  # cần reader: quyết định G4, rồi G1/G2/G3 trên tập dev
 bash scripts/run_pipeline.sh teacher distill train   # chưng cất + 3 seed × 2 loại nhãn (cần GPU lớn)
 READER_BACKEND=vllm bash scripts/run_pipeline.sh eval analyze
 ```
@@ -88,8 +89,10 @@ Mỗi file được tách từ **một lần** (`scripts/segment_data.py`); các
 ## Tuần cổng: chẩn đoán (DATN §4.0)
 
 `diagnose.py --unique-clusters` đếm mỗi tài liệu nguồn một lần. Kết quả ghi vào `results/diagnose/*.json`;
-`scripts/gate_report.py` đối chiếu với ngưỡng các cổng G1 (phần CBR), G2 (phần đếm) và G5. Điểm tác vụ cho các cổng
-G1, G3, G4 lấy từ giai đoạn `eval` với `LIMIT=500`.
+`scripts/gate_report.py` đối chiếu với ngưỡng các cổng G1 (phần CBR), G2 (phần đếm) và G5. Phần cần reader của các cổng
+chạy trên **tập dev**, không dùng tập test: `teacher_gate` (G4, thầy so với truncation trên đúng 200 mẫu dev thầy
+đã nén) và `gate_eval` (G1 phần điểm, G2 phần NFR, G3; `GATE_LIMIT=500`). Cả hai gọi `scripts/gate_eval.py` và ghi
+`results/gate/*.md`. Chỉ chưng cất khi G4 đạt.
 
 ## Training
 
@@ -133,7 +136,8 @@ Các ô của thiết kế 2×2 (§2.3) chỉ khác nhau ở checkpoint và `uni
 
 Các biến thể khác, cũng qua `scored:`: `protect=soft|hard` và `tiers=T1+T2`; `alpha=0.5` và `cost=syllables`
 (H3 và đối chứng độ dài); `exact=1` (knapsack DP). Đối chứng tra từ: `lexprior:train=data/distill/distilled.jsonl`.
-Cận trên từ thầy: `precomputed:path=results/teacher_dev.jsonl,name=teacher`.
+Cận trên từ thầy: `precomputed:path=results/teacher_dev/vinli_dev.jsonl,trim=1,name=teacher` (`trim=1` cắt đầu ra
+thầy về đúng ngân sách như mọi phương pháp khác).
 
 ## Ghi chú cài đặt (so với DATN.md)
 
@@ -143,6 +147,8 @@ Cận trên từ thầy: `precomputed:path=results/teacher_dev.jsonl,name=teache
   âm tiết là trung bình logit các subword.
 - **Selective Context:** tái hiện ở cấp từ (tổng surprisal các token của từ), không dùng package gốc vì package đó
   phụ thuộc spaCy tiếng Anh.
+- **Baseline cấp câu** (`tfidf_sent`, `ppl_sent`): chọn trọn câu theo điểm, phần ngân sách còn lại lấp bằng phần đầu
+  của câu tốt nhất chưa chọn. Nếu không lấp, premise ViNLI (thường một câu dài hơn ngân sách) bị nén thành rỗng.
 - **ROUGE:** tự cài trên âm tiết, vì `rouge_score` bỏ mọi ký tự ngoài ASCII. BERTScore **chưa** được cài đặt.
 - **Danh sách stopword** (`viword/resources/stopwords_vi.txt`) là danh sách ngắn tự soạn. Cần thay bằng danh sách
   đã công bố trước khi báo cáo kết quả.

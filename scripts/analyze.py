@@ -16,9 +16,8 @@ from collections import defaultdict
 import numpy as np
 
 from viword.data import read_jsonl
+from viword.eval import MAIN_METRIC
 from viword.stats import cluster_bootstrap, holm, mcnemar_exact, non_inferiority, paired_test
-
-MAIN_METRIC = {"vietnews": "rougeL", "vinli": "accuracy", "vimmrc": "accuracy", "belebele": "accuracy"}
 
 
 def by_key(rows, *keys):

@@ -3,7 +3,8 @@
 #
 #   bash scripts/run_pipeline.sh data segment diagnose     # week-1 gate, no reader
 #   bash scripts/run_pipeline.sh teacher_check             # gate G4 inputs (teacher on dev sets)
-#   bash scripts/run_pipeline.sh teacher distill train     # distillation + 3 seeds x 2 label units
+#   bash scripts/run_pipeline.sh teacher_gate gate_eval    # needs a reader: G4, then G1/G2/G3 on dev
+#   bash scripts/run_pipeline.sh teacher distill train     # only after G4 passes
 #   bash scripts/run_pipeline.sh eval analyze              # needs a reader (vLLM, API or hf)
 #
 # Every stage reads the previous stage's files, so stages can be run on different machines.
@@ -23,7 +24,7 @@ READER_BACKEND=${READER_BACKEND:-vllm}     # vllm | api | hf
 READER_URL=${READER_URL:-}                 # for READER_BACKEND=api
 READER_TOKENIZER=${READER_TOKENIZER:-$READER}
 LM=${LM:-Qwen/Qwen2.5-1.5B-Instruct}       # small causal LM for ppl_sent / selective_context
-LIMIT=${LIMIT:-}                           # e.g. LIMIT=500 for the gate evaluation
+LIMIT=${LIMIT:-}                           # cap on test examples per task (gates use GATE_LIMIT on dev)
 SEEDS=${SEEDS:-"0 1 2"}
 RATIOS="0.5 0.333 0.2"
 LL2=microsoft/llmlingua-2-xlm-roberta-large-meetingbank
@@ -92,6 +93,50 @@ stage_teacher_check() {  # gate G4: teacher compressions of dev contexts -> `pre
   done
 }
 
+stage_teacher_gate() {  # gate G4 decision: teacher vs truncation on the same 200 dev examples
+  reader_tag=$(basename "$READER")
+  mkdir -p results/gate
+  rows=()
+  for spec in $DEV_SETS; do
+    IFS=: read -r task stem field <<< "$spec"
+    log "review teacher on $stem"
+    python scripts/review_teacher.py --teacher "results/teacher_dev/$stem.jsonl" --data "data/tasks/$stem.jsonl" \
+      --field "$field" --segmented "data/segmented/$stem.jsonl" --tokenizer "$READER_TOKENIZER" \
+      | tee "results/gate/teacher_review_$stem.md"
+    log "G4: evaluate teacher on $stem with $READER"
+    python scripts/evaluate.py --task "$task" --data "data/tasks/$stem.jsonl" \
+      --segmented "data/segmented/$stem.jsonl" --reader "$READER" --backend "$READER_BACKEND" \
+      ${READER_URL:+--base-url $READER_URL} --tokenizer "$READER_TOKENIZER" --ratios $RATIOS --limit 200 \
+      --methods none no_context truncation lead \
+        "precomputed:path=results/teacher_dev/$stem.jsonl,trim=1,name=teacher" \
+        "precomputed:path=results/teacher_dev/$stem.jsonl,name=teacher_raw" \
+      --out "results/gate/teacher_${stem}_${reader_tag}.jsonl"
+    rows+=("results/gate/teacher_${stem}_${reader_tag}.jsonl")
+  done
+  python scripts/gate_eval.py --rows "${rows[@]}" | tee "results/gate/g4_${reader_tag}.md"
+}
+
+stage_gate_eval() {  # reader parts of G1, G2, G3 on the DEV sets (no gate decision looks at test)
+  reader_tag=$(basename "$READER")
+  mkdir -p results/gate
+  rows=()
+  for spec in $DEV_SETS; do
+    IFS=: read -r task stem _ <<< "$spec"
+    extra=$([ "$task" = vinli ] && echo probe_negation || true)
+    log "gate evaluation on $stem with $READER"
+    python scripts/evaluate.py --task "$task" --data "data/tasks/$stem.jsonl" \
+      --segmented "data/segmented/$stem.jsonl" --reader "$READER" --backend "$READER_BACKEND" \
+      ${READER_URL:+--base-url $READER_URL} --tokenizer "$READER_TOKENIZER" --ratios $RATIOS \
+      --limit "${GATE_LIMIT:-500}" \
+      --methods none no_context lead truncation tfidf_sent "ppl_sent:lm=$LM" "selective_context:lm=$LM" \
+        "scored:model=$LL2,unit=syllable,name=llmlingua2_syl" \
+        "scored:model=$LL2,unit=word,name=llmlingua2_wordpool" $extra \
+      --out "results/gate/dev_${stem}_${reader_tag}.jsonl"
+    rows+=("results/gate/dev_${stem}_${reader_tag}.jsonl")
+  done
+  python scripts/gate_eval.py --rows "${rows[@]}" | tee "results/gate/g123_${reader_tag}.md"
+}
+
 stage_teacher() {
   log "teacher on distillation paragraphs"
   python scripts/teacher_compress.py --input data/distill/paragraphs_clean.jsonl --field text \
@@ -152,5 +197,5 @@ stage_analyze() {
   done
 }
 
-[ $# -gt 0 ] || { grep -E '^#( |$)' "$0" | head -8; exit 1; }
+[ $# -gt 0 ] || { grep -E '^#( |$)' "$0" | head -9; exit 1; }
 for stage in "$@"; do "stage_$stage"; done

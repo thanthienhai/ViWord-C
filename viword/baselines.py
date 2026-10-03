@@ -106,12 +106,26 @@ class LexicalRules:
 
 def _select_sentences(context: Context, sentence_scores: list[float], budget: int,
                       counter: TokenCounter) -> str:
-    """Keep whole sentences by score until the budget is used; restore original order."""
+    """Keep whole sentences by score until the budget is used, then fill the rest of the
+    budget with the head of the best sentence that did not fit; restore original order.
+    Without the fill, a context of one long sentence (most ViNLI premises) compresses to
+    nothing and the baseline degenerates into `no_context`."""
     sentences = context.doc
     costs = [counter.count(render_all(s)) + 1 for s in sentences]
     keep = greedy_select(sentence_scores, costs, budget)
-    words = [w for s, k in zip(sentences, keep) if k for w in s]
-    return render_all(words) if words else ""
+    rest = [i for i in range(len(sentences)) if not keep[i]]
+    partial = max(rest, key=lambda i: sentence_scores[i]) if rest else None
+    words, scores = [], []
+    for i, s in enumerate(sentences):
+        for j, w in enumerate(s):
+            words.append(w)
+            if keep[i]:
+                scores.append(2.0)
+            elif i == partial:
+                scores.append(1.0 - j / len(s))  # earlier words of the partial sentence first
+            else:
+                scores.append(-1.0 - len(words) / 1e6)
+    return select_units(words, scores, budget, counter, fill=False)
 
 
 class TfidfSentences:
@@ -211,17 +225,25 @@ class NegationProbe:
 
 class Precomputed:
     """Compressions produced elsewhere (e.g. the teacher upper bound, DATN §4.2).
-    File: JSONL with fields id, ratio, compressed. Missing entries raise an error."""
+    File: JSONL with fields id, ratio, compressed. Missing entries raise an error.
+    Ratios are matched to 3 decimals (0.333 = 1/3). The teacher is not budget-controlled;
+    with trim=True its output is cut from the end to the budget, like every other method."""
 
-    def __init__(self, path: str, name: str = "precomputed"):
+    def __init__(self, path: str, name: str = "precomputed", trim: bool = False):
         import json
 
-        self.name = name
+        self.name, self.trim = name, trim
         with open(path, encoding="utf-8") as f:
-            self.table = {(r["id"], float(r["ratio"])): r["compressed"] for r in map(json.loads, f)}
+            self.table = {(r["id"], round(float(r["ratio"]), 3)): r["compressed"] for r in map(json.loads, f)}
 
     def compress(self, context, budget, counter):
-        return self.table[(context.example_id, float(context.ratio))]
+        text = self.table[(context.example_id, round(float(context.ratio), 3))]
+        if self.trim:
+            words = text.split()
+            while words and counter.count(" ".join(words)) > budget:
+                words.pop()
+            text = " ".join(words)
+        return text
 
 
 # ---------------------------------------------------------------------------- llmlingua

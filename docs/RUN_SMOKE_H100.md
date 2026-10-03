@@ -20,7 +20,7 @@ huggingface-cli login        # hoặc: export HF_TOKEN=hf_xxx
 ## 2. Chạy smoke test
 
 ```bash
-HF_DATA_REPO=thanthienhai/viword-c-data bash scripts/smoke_h100.sh
+bash scripts/smoke_h100.sh
 ```
 
 Lệnh trên tự làm lần lượt các bước:
@@ -29,6 +29,7 @@ Lệnh trên tự làm lần lượt các bước:
 |---|---|---|
 | `setup` | tạo `.venv`, cài torch / transformers / vLLM, chạy test, in thông tin GPU | 5–10 phút |
 | `check_data` | tải dữ liệu từ HF về `data/` và `results/teacher_dev/`, kiểm tra đủ file | 1–3 phút |
+| `teacher_gate` | cổng G4: Qwen2.5-7B đọc đầu ra của thầy và truncation trên 200 mẫu dev × 3 tác vụ | 10–15 phút |
 | `distill` | dựng nhãn từ đầu ra của thầy, lấy tập con 1.500 đoạn | vài phút |
 | `train` | huấn luyện 2 encoder XLM-R-large (nhãn từ, nhãn âm tiết), 1 epoch | 15–20 phút |
 | `eval` | nén + đọc bằng Qwen2.5-7B (vLLM) trên Belebele và ViNLI | 20–30 phút |
@@ -37,7 +38,7 @@ Lệnh trên tự làm lần lượt các bước:
 Chạy lại từng bước riêng nếu cần (môi trường `.venv` đã có):
 
 ```bash
-HF_DATA_REPO=thanthienhai/viword-c-data bash scripts/smoke_h100.sh check_data
+bash scripts/smoke_h100.sh check_data
 bash scripts/smoke_h100.sh train eval analyze
 ```
 
@@ -51,7 +52,7 @@ Nén và gửi lại toàn bộ thư mục `results/smoke/`:
 tar czf smoke_results.tgz results/smoke
 ```
 
-Thư mục gồm `smoke.log`, `train_*.log`, `eval_*.log`, `distill_summary.json`, `analysis.md` và `*_rows.jsonl`.
+Thư mục gồm `g4_*.md` (kết quả cổng G4, xem trước tiên), `teacher_review_*.md`, `smoke.log`, `train_*.log`, `eval_*.log`, `distill_summary.json`, `analysis.md` và `*_rows.jsonl`.
 
 ## Khi gặp lỗi
 

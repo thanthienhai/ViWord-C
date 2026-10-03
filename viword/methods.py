@@ -9,7 +9,7 @@ Spec syntax: `name` or `name:key=value,key=value`. Examples:
   translate:inner=llmlingua2                (Belebele only: compress the English passage)
   scored:model=runs/viword_s0,unit=word,protect=soft,delta=0.2,alpha=0,name=viword
   lexprior:train=data/distill/train.jsonl
-  precomputed:path=results/teacher_dev.jsonl,name=teacher
+  precomputed:path=results/teacher_dev/vinli_dev.jsonl,trim=1,name=teacher
 
 `scored` covers ViWord-C, LLMLingua-2-vi and the 2×2 cells; with
 model=microsoft/llmlingua-2-xlm-roberta-large-meetingbank it scores with the published
@@ -70,7 +70,7 @@ def build_compressor(spec: str, cache: dict | None = None):
     if name == "translate":
         return TranslateThenCompress(build_compressor(a.get("inner", "llmlingua2"), cache))
     if name == "precomputed":
-        return B.Precomputed(a["path"], a.get("name", "precomputed"))
+        return B.Precomputed(a["path"], a.get("name", "precomputed"), trim=a.get("trim", "0") == "1")
     if name in {"scored", "lexprior"}:
         if name == "scored":
             from .model import SyllableScorer

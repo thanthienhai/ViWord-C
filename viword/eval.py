@@ -14,6 +14,7 @@ from collections import Counter
 from .data import Example
 
 NLI_LABELS = ["entailment", "contradiction", "neutral", "other"]
+MAIN_METRIC = {"vietnews": "rougeL", "vinli": "accuracy", "vimmrc": "accuracy", "belebele": "accuracy"}
 
 
 def build_prompt(example: Example, context: str) -> str:
