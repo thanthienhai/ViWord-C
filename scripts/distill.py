@@ -35,6 +35,9 @@ def main():
     docs = {r["id"]: r["doc"] for r in read_jsonl(args.segmented)}
     records, stats = [], Counter()
     for t in read_jsonl(args.teacher):
+        if t["id"] not in texts:  # dropped by a later leak filter run (e.g. new evaluation sets)
+            stats["not_in_paragraphs"] += 1
+            continue
         if t["id"] not in docs:
             stats["missing_segmentation"] += 1
             continue

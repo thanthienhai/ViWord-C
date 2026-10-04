@@ -19,7 +19,7 @@ import os
 
 from tqdm import tqdm
 
-from viword.data import load_contexts, load_task, read_jsonl, write_jsonl
+from viword.data import TASKS, load_contexts, load_task, read_jsonl, write_jsonl
 from viword.eval import MAX_NEW_TOKENS, APIReader, HFReader, VLLMReader, build_prompt, parse_prediction, score
 from viword.methods import build_compressor
 from viword.select import TokenCounter
@@ -51,7 +51,7 @@ def compress_all(args, examples, contexts) -> list[dict]:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--task", required=True, choices=["vietnews", "vinli", "vimmrc", "belebele"])
+    ap.add_argument("--task", required=True, choices=sorted(TASKS))
     ap.add_argument("--data", required=True)
     ap.add_argument("--segmented", required=True)
     ap.add_argument("--reader", required=True)

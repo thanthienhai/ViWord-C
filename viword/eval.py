@@ -15,7 +15,8 @@ from collections import Counter
 from .data import Example
 
 NLI_LABELS = ["entailment", "contradiction", "neutral", "other"]
-MAIN_METRIC = {"vietnews": "rougeL", "vinli": "accuracy", "vimmrc": "accuracy", "belebele": "accuracy"}
+MAIN_METRIC = {"vietnews": "rougeL", "vinli": "accuracy", "vimmrc": "accuracy", "belebele": "accuracy",
+               "viquad": "f1", "gsm8k": "accuracy", "oneruler": "recall"}
 
 
 def build_prompt(example: Example, context: str) -> str:
@@ -26,12 +27,21 @@ def build_prompt(example: Example, context: str) -> str:
         return ("Cho một tiền đề và một giả thuyết. Xác định quan hệ giữa chúng. Trả lời đúng một từ: "
                 "entailment, contradiction, neutral hoặc other.\n\n"
                 f"Tiền đề: {context}\nGiả thuyết: {example.question}\n\nNhãn:")
+    if example.task == "qa":
+        return ("Đọc đoạn văn và trả lời câu hỏi bằng một cụm từ ngắn lấy từ đoạn văn. Chỉ ghi câu trả lời.\n\n"
+                f"Đoạn văn: {context}\n\nCâu hỏi: {example.question}\n\nTrả lời:")
+    if example.task == "math":
+        # the context holds the worked demonstrations; only they are compressed
+        return ("Giải bài toán theo cách của các ví dụ. Dòng cuối ghi \"Đáp án: <số>\".\n\n"
+                f"{context}\n\nCâu hỏi: {example.question}\nLời giải:")
+    if example.task == "ruler":
+        return example.extra["template"].replace("{context}", context)
     options = "\n".join(f"{letter}. {choice}" for letter, choice in zip("ABCD", example.choices))
     return ("Đọc đoạn văn và chọn đáp án đúng. Chỉ trả lời một chữ cái (A, B, C hoặc D).\n\n"
             f"Đoạn văn: {context}\n\nCâu hỏi: {example.question}\n{options}\n\nĐáp án:")
 
 
-MAX_NEW_TOKENS = {"summ": 256, "nli": 8, "mc": 8}
+MAX_NEW_TOKENS = {"summ": 256, "nli": 8, "mc": 8, "qa": 32, "math": 320, "ruler": 64}
 
 
 def parse_prediction(task: str, text: str) -> str:
@@ -43,7 +53,26 @@ def parse_prediction(task: str, text: str) -> str:
     if task == "mc":
         match = re.search(r"\b([ABCD])\b", text)
         return match.group(1) if match else ""
+    if task == "qa":
+        return text.split("\n")[0].strip()
+    if task == "math":
+        match = re.search(r"Đáp án\s*:\s*(-?\d[\d.,]*)", text)
+        numbers = [match.group(1)] if match else re.findall(r"-?\d[\d.,]*", text)
+        return normalize_number(numbers[-1]) if numbers else ""
     return text
+
+
+def normalize_number(text: str) -> str:
+    """'1.000' / '1,000' (thousands) -> '1000'; '2,5' / '2.5' (decimal) -> '2.5'; '18.0' -> '18'."""
+    text = text.strip().rstrip(".,")
+    if re.fullmatch(r"-?\d{1,3}([.,]\d{3})+", text):
+        text = re.sub(r"[.,]", "", text)
+    text = text.replace(",", ".")
+    try:
+        value = float(text)
+    except ValueError:
+        return text
+    return str(int(value)) if value == int(value) else str(value)
 
 
 # ---------------------------------------------------------------------------- metrics
@@ -81,12 +110,31 @@ def rouge_l(prediction: str, reference: str) -> float:
     return 2 * precision * recall / (precision + recall)
 
 
+def qa_f1(prediction: str, reference: str) -> float:
+    """SQuAD-style token F1 on lowercased syllables (punctuation dropped)."""
+    p, r = _syllables(prediction), _syllables(reference)
+    overlap = sum((Counter(p) & Counter(r)).values())
+    if not overlap:
+        return 0.0
+    precision, recall = overlap / len(p), overlap / len(r)
+    return 2 * precision * recall / (precision + recall)
+
+
 def score(example: Example, prediction: str) -> dict[str, float]:
     """Per-example metrics. The first key is the task's main metric."""
     if example.task == "summ":
         return {"rougeL": rouge_l(prediction, example.answer),
                 "rouge1": rouge_n(prediction, example.answer, 1),
                 "rouge2": rouge_n(prediction, example.answer, 2)}
+    if example.task == "qa":  # best match over the gold answers
+        answers = example.extra["answers"]
+        return {"f1": max(qa_f1(prediction, a) for a in answers),
+                "em": float(any(_syllables(prediction) == _syllables(a) for a in answers))}
+    if example.task == "ruler":  # RULER string match: share of gold strings found in the output
+        answers = example.extra["answers"]
+        return {"recall": sum(a.lower() in prediction.lower() for a in answers) / len(answers)}
+    if example.task == "math":
+        return {"accuracy": float(prediction == normalize_number(example.answer))}
     return {"accuracy": float(prediction == example.answer)}
 
 

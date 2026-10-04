@@ -30,8 +30,12 @@ RATIOS="0.5 0.333 0.2"
 LL2=microsoft/llmlingua-2-xlm-roberta-large-meetingbank
 
 # task name : file stem : field that is compressed
-TEST_SETS="belebele:belebele:context vinli:vinli_test:premise vimmrc:vimmrc_test:context vietnews:vietnews_test:context"
+TEST_SETS="belebele:belebele:context vinli:vinli_test:premise vimmrc:vimmrc_test:context vietnews:vietnews_test:context
+           viquad:viquad_test:context gsm8k:gsm8k_test:context oneruler:oneruler_test:context"
+# the decision gates (G1-G4) use only these three dev sets, as preregistered in DATN §2.3
 DEV_SETS="vinli:vinli_dev:premise vimmrc:vimmrc_dev:context vietnews:vietnews_dev:context"
+# dev sets of the tasks added on 2026-10-04: segmented and leak-checked, not used by the gates
+EXTRA_DEV_SETS="viquad:viquad_dev:context gsm8k:gsm8k_dev:context oneruler:oneruler_dev:context"
 COST_TOKENIZERS="Qwen/Qwen2.5-7B-Instruct SeaLLMs/SeaLLMs-v3-7B-Chat unsloth/Llama-3.1-8B-Instruct unsloth/gemma-2-9b-it unsloth/gemma-3-12b-it"
 LIMIT_ARG=${LIMIT:+--limit $LIMIT}
 
@@ -39,12 +43,12 @@ log() { echo -e "\n=== $* ($(date '+%F %T'))"; }
 
 # ---------------------------------------------------------------------------- stages
 stage_data() {
-  for d in belebele vinli vimmrc vietnews paragraphs; do
+  for d in belebele vinli vimmrc vietnews viquad gsm8k oneruler paragraphs; do
     log "prepare $d"; python scripts/prepare_data.py "$d"
   done
   log "leak filter"
   eval_files=()  # evaluation and dev sets only (not vinli_train)
-  for spec in $TEST_SETS $DEV_SETS; do
+  for spec in $TEST_SETS $DEV_SETS $EXTRA_DEV_SETS; do
     IFS=: read -r _ stem _ <<< "$spec"; eval_files+=("data/tasks/$stem.jsonl")
   done
   python scripts/leak_filter.py --input data/distill/paragraphs.jsonl \
@@ -52,7 +56,7 @@ stage_data() {
 }
 
 stage_segment() {
-  for spec in $TEST_SETS $DEV_SETS; do
+  for spec in $TEST_SETS $DEV_SETS $EXTRA_DEV_SETS; do
     IFS=: read -r _ stem field <<< "$spec"
     log "segment $stem"
     python scripts/segment_data.py --input "data/tasks/$stem.jsonl" --field "$field" \

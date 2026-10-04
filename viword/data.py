@@ -17,6 +17,9 @@ TASKS = {
     "vinli": "nli",  # natural language inference, compress the premise
     "vimmrc": "mc",  # multiple-choice reading comprehension
     "belebele": "mc",
+    "viquad": "qa",  # extractive QA (UIT-ViQuAD 2.0, answerable questions)
+    "gsm8k": "math",  # compress the few-shot chain-of-thought demonstrations (vi_gsm8k)
+    "oneruler": "ruler",  # long-context retrieval / aggregation (OneRuler, Vietnamese)
 }
 
 
@@ -24,12 +27,14 @@ TASKS = {
 class Example:
     id: str
     cluster: str
-    task: str  # "summ", "nli" or "mc"
+    task: str  # "summ", "nli", "mc", "qa", "math" or "ruler"
     context: str  # the part that is compressed
     question: str = ""  # mc question, or nli hypothesis (never compressed)
     choices: list[str] = field(default_factory=list)
-    answer: str = ""  # mc: "A".."D"; nli: label; summ: reference summary
-    extra: dict = field(default_factory=dict)  # e.g. {"context_en": ...} for Belebele
+    answer: str = ""  # mc: "A".."D"; nli: label; summ: reference summary; math: number
+    # e.g. {"context_en": ...} for Belebele; {"answers": [...]} for qa and ruler;
+    # {"template": "...{context}...", "subtask": ...} for ruler
+    extra: dict = field(default_factory=dict)
 
 
 def read_jsonl(path: str) -> list[dict]:
@@ -49,6 +54,9 @@ def load_task(name: str, path: str, limit: int | None = None) -> list[Example]:
     vinli:    {id, cluster, premise, hypothesis, label}
     vimmrc:   {id, cluster, context, question, choices, answer}   (answer = "A".."D")
     belebele: same as vimmrc, optional context_en
+    viquad:   {id, cluster, context, question, answers}
+    gsm8k:    {id, cluster, context (demonstrations), question, answer}
+    oneruler: {id, cluster, context, template, answers, subtask}   (template contains "{context}")
     """
     task = TASKS[name]
     examples = []
@@ -58,6 +66,14 @@ def load_task(name: str, path: str, limit: int | None = None) -> list[Example]:
         elif task == "nli":
             ex = Example(r["id"], r["cluster"], task, r["premise"], question=r["hypothesis"],
                          answer=r["label"])
+        elif task == "qa":
+            ex = Example(r["id"], r["cluster"], task, r["context"], question=r["question"],
+                         extra={"answers": r["answers"]})
+        elif task == "math":
+            ex = Example(r["id"], r["cluster"], task, r["context"], question=r["question"], answer=r["answer"])
+        elif task == "ruler":
+            ex = Example(r["id"], r["cluster"], task, r["context"],
+                         extra={"answers": r["answers"], "template": r["template"], "subtask": r["subtask"]})
         else:
             ex = Example(r["id"], r["cluster"], task, r["context"], question=r["question"],
                          choices=r["choices"], answer=r["answer"],

@@ -83,6 +83,9 @@ OpenAI). Thầy chỉ cần trả về văn bản; không dùng logit.
 | ViNLI | `presencesw/vinli_4_label` (bản sao không chính thức) | test: 2.991 cặp nhưng chỉ 377 premise |
 | ViMMRC | `ura-hcmut/ViMMRC` (bản chính thức `uitnlp/vimmrc2.0` bị gated) | đã loại câu hỏi về bài thơ; test chỉ 69 đoạn |
 | VietNews | `nam194/vietnews` | bản gốc đã tách từ (`Cơ_quan`), được trả về văn bản thường; lấy mẫu 1.000 bài |
+| UIT-ViQuAD 2.0 | `taidng/UIT-ViQuAD2.0` | QA trích xuất; validation làm test (2.653 câu có đáp án), F1 |
+| GSM8K-vi | `hllj/vi_gsm8k` (dịch máy) | nén 8 ví dụ có lời giải; đã loại 12 câu test lỗi dịch; báo cáo riêng nhóm "MT" |
+| OneRuler-vi | `starbix/oneruler`, `vi_4096` | ngữ cảnh dài khoảng 4.300 token, 7 tác vụ con × 100 mẫu |
 | Đoạn chưng cất | VietNews train + Wikipedia vi (20231101) | 300–1.500 âm tiết, trọn câu; 5.000 đoạn mỗi nguồn |
 
 Mỗi file được tách từ **một lần** (`scripts/segment_data.py`); các văn bản trùng nhau (premise ViNLI) chỉ tách một lần.

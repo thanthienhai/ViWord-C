@@ -3,7 +3,8 @@ import math
 import numpy as np
 import pytest
 
-from viword.eval import parse_prediction, rouge_l, rouge_n
+from viword.data import Example
+from viword.eval import build_prompt, normalize_number, parse_prediction, rouge_l, rouge_n, score
 from viword.stats import cluster_bootstrap, holm, mcnemar_exact, paired_test
 
 
@@ -50,3 +51,30 @@ def test_parse_prediction():
     assert parse_prediction("mc", "Đáp án: B") == "B"
     assert parse_prediction("nli", "Contradiction.") == "contradiction"
     assert parse_prediction("nli", "không rõ") == ""
+
+
+def test_normalize_number():
+    assert normalize_number("1.000") == normalize_number("1,000") == "1000"
+    assert normalize_number("2,5") == normalize_number("2.5") == "2.5"
+    assert normalize_number("18.0") == "18"
+
+
+def test_math_parse_and_score():
+    ex = Example("g", "g", "math", "demos", question="?", answer="1250")
+    out = parse_prediction("math", "3 x 400 = 1200, cộng 50.\nĐáp án: 1.250")
+    assert out == "1250" and score(ex, out)["accuracy"] == 1.0
+    assert parse_prediction("math", "kết quả là 7") == "7"  # no "Đáp án:" line: last number
+
+
+def test_qa_score_takes_best_answer():
+    ex = Example("q", "q", "qa", "ctx", question="?", extra={"answers": ["Hà Nội", "thủ đô Hà Nội"]})
+    assert score(ex, "Hà Nội.")["em"] == 1.0
+    assert 0 < score(ex, "ở Hà Nội")["f1"] < 1
+
+
+def test_ruler_prompt_and_recall():
+    ex = Example("r", "r", "ruler", "haystack", extra={"answers": ["123", "456"], "subtask": "niah_multivalue",
+                                                       "template": "<Văn bản>\n{context}\n</Văn bản> Hỏi?"})
+    assert build_prompt(ex, "rơm") == "<Văn bản>\nrơm\n</Văn bản> Hỏi?"
+    assert score(ex, "Các số: 123")["recall"] == 0.5
+
