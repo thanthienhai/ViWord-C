@@ -5,6 +5,7 @@ Mã nguồn nghiên cứu cho đề tài *Nén ngữ cảnh có nhận thức ng
 **từ tiếng Việt** thay vì âm tiết, có **ưu tiên bảo vệ hư từ mang nghĩa** (phủ định, điều kiện, thời/thể, lượng
 từ), và tính ngân sách bằng **token của LLM đích**.
 
+- [`data/README.md`](data/README.md): nguồn, các bước lọc và kết quả rà soát dữ liệu (lỗi đã sửa, vấn đề còn tồn tại).
 - [`DATN.md`](DATN.md): đề xuất nghiên cứu (vấn đề P1–P3, giả thuyết H1–H3, cổng quyết định G1–G5, thiết kế thực
   nghiệm). Các chú thích "DATN §x" trong mã nguồn trỏ tới tài liệu này.
 - [`docs/LITERATURE_DATN.md`](docs/LITERATURE_DATN.md): tài liệu liên quan, theo nhóm và mức ưu tiên.
@@ -102,8 +103,8 @@ chạy trên **tập dev**, không dùng tập test: `teacher_gate` (G4, thầy 
    - `distill.py`: căn chỉnh và dựng nhãn; bỏ đầu ra viết lại (> 10% chữ không có trong nguồn) hoặc không nén
      (giữ > 90%).
 
-   Toàn bộ 18.031 đầu ra của thầy: 78% hợp lệ (18% bị loại vì viết lại, 4% vì không nén); chính thầy cắt đôi
-   6,7% từ ghép (nên dùng nhãn mềm). Cổng G4 đạt ở 2/3 tác vụ (smoke test 04/10), nhưng thầy **thua truncation trên
+   Toàn bộ 18.031 đầu ra của thầy: 79% hợp lệ (17% bị loại vì viết lại, 4% vì không nén); chính thầy cắt đôi
+   6,0% từ ghép (nên dùng nhãn mềm). Cổng G4 đạt ở 2/3 tác vụ (smoke test 04/10), nhưng thầy **thua truncation trên
    VietNews** (−1,25 điểm ROUGE-L), là miền chiếm một nửa kho chưng cất.
 
 2. **Huấn luyện encoder** (§3.3), 3 seed cho mỗi loại nhãn (giai đoạn `train`). Siêu tham số mặc định: XLM-R-large,

@@ -79,18 +79,22 @@ def prepare_vimmrc(out_dir):
 
     data = load_dataset("ura-hcmut/ViMMRC")
     for split, name in (("validation", "dev"), ("test", "test")):
-        rows, poems = [], 0
+        rows, poems, ambiguous = [], 0, 0
         for i, r in enumerate(data[split]):
             if is_poem(r["article"]):
                 poems += 1
                 continue
             choices = ast.literal_eval(r["options"])
+            gold = choices["ABCD".index(r["answer"].strip())]
+            if choices.count(gold) > 1:  # the gold text is also a "wrong" option: two right answers
+                ambiguous += 1
+                continue
             rows.append({"id": f"vimmrc-{name}-{i}", "cluster": short_hash(r["article"]),
                          "context": r["article"], "question": r["question"],
                          "choices": choices, "answer": r["answer"].strip()})
         write_jsonl(os.path.join(out_dir, f"vimmrc_{name}.jsonl"), rows)
         print(f"vimmrc {name}: {len(rows)} questions, {len({r['cluster'] for r in rows})} passages, "
-              f"{poems} poem questions dropped")
+              f"{poems} poem questions and {ambiguous} questions with a duplicated gold choice dropped")
 
 
 def prepare_vietnews(out_dir, n: int = 1000, seed: int = 0):

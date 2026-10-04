@@ -33,9 +33,25 @@ class Word:
 Document = list[list[Word]]  # list of sentences
 
 
+# Old-style tone placement in open syllables ("hoà", "khoẻ", "thuỷ") -> new style ("hòa",
+# "khỏe", "thủy"), which is what VnCoreNLP outputs. "qu" + y keeps the mark on y ("quý").
+_OLD_TONE = re.compile(r"(?<![qQ])([oOuU])([àáảãạÀÁẢÃẠèéẻẽẹÈÉẺẼẸỳýỷỹỵỲÝỶỸỴ])(?!\w)")
+_PAIRS = {"o": "ae", "u": "y"}
+
+
+def _move_tone(m: re.Match) -> str:
+    first, second = m.group(1), m.group(2)
+    base, *marks = unicodedata.normalize("NFD", second)
+    if base.lower() not in _PAIRS[first.lower()]:
+        return m.group(0)
+    return unicodedata.normalize("NFC", first + "".join(marks)) + base
+
+
 def normalize(text: str) -> str:
-    """NFC normalization. Vietnamese text in NFD breaks both segmentation and token counts."""
-    return unicodedata.normalize("NFC", text)
+    """NFC and one tone-mark placement. Vietnamese text in NFD breaks both segmentation and
+    token counts. Mixed placement ("hoá" in the source, "hóa" after VnCoreNLP) made the
+    teacher alignment miss those syllables and label them as dropped."""
+    return _OLD_TONE.sub(_move_tone, unicodedata.normalize("NFC", text))
 
 
 def flatten(doc: Document) -> list[Word]:
@@ -87,7 +103,8 @@ def render_all(words: list[Word]) -> str:
 
 # ---------------------------------------------------------------------------- alignment
 
-TOKEN_RE = re.compile(r"\w+|[^\w\s]")
+# digits and letters are separate tokens, so "6h30" matches the segmenter's "6" + "h30"
+TOKEN_RE = re.compile(r"\d+|[^\W\d_]+|[^\w\s]|_")
 
 
 def simple_tokens(text: str) -> list[str]:

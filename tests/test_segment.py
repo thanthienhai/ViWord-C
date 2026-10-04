@@ -1,7 +1,7 @@
 from conftest import W
 
-from viword.segment import (align_compressed, doc_from_json, doc_to_json, expand_word_mask, render,
-                            render_all, syllables_of)
+from viword.segment import (align_compressed, doc_from_json, doc_to_json, expand_word_mask, normalize,
+                            render, render_all, syllables_of)
 
 
 def test_render_keeps_punctuation_attached(sentence):
@@ -33,6 +33,19 @@ def test_align_detects_rewriting(sentence):
 def test_align_is_case_and_spacing_insensitive():
     words = [W("COVID-19"), W(","), W("hôm nay")]
     mask, unmatched = align_compressed(words, "covid - 19, hôm nay")
+    assert all(mask) and unmatched == 0.0
+
+
+def test_normalize_tone_placement():
+    assert normalize("Cộng hoà, sức khoẻ, Uỷ ban, thuỷ") == "Cộng hòa, sức khỏe, Ủy ban, thủy"
+    # closed syllables, "qu" + y and other vowels are left alone
+    assert normalize("hoàn toàn, quý, quỳ, hoè, chào") == "hoàn toàn, quý, quỳ, hòe, chào"
+
+
+def test_align_matches_across_spelling_and_number_splits():
+    # VnCoreNLP writes "hóa" and splits "6h30"; the teacher copies the source ("hoá", "6h30")
+    words = [W("văn hóa"), W("lúc"), W("6"), W("h30")]
+    mask, unmatched = align_compressed(words, "văn hoá lúc 6h30")
     assert all(mask) and unmatched == 0.0
 
 
