@@ -102,7 +102,9 @@ chạy trên **tập dev**, không dùng tập test: `teacher_gate` (G4, thầy 
    - `distill.py`: căn chỉnh và dựng nhãn; bỏ đầu ra viết lại (> 10% chữ không có trong nguồn) hoặc không nén
      (giữ > 90%).
 
-   Smoke test 19 đoạn: 79% đầu ra hợp lệ; chính thầy cắt đôi ~9% từ ghép (nên dùng nhãn mềm).
+   Toàn bộ 18.031 đầu ra của thầy: 78% hợp lệ (18% bị loại vì viết lại, 4% vì không nén); chính thầy cắt đôi
+   6,7% từ ghép (nên dùng nhãn mềm). Cổng G4 đạt ở 2/3 tác vụ (smoke test 04/10), nhưng thầy **thua truncation trên
+   VietNews** (−1,25 điểm ROUGE-L), là miền chiếm một nửa kho chưng cất.
 
 2. **Huấn luyện encoder** (§3.3), 3 seed cho mỗi loại nhãn (giai đoạn `train`). Siêu tham số mặc định: XLM-R-large,
    AdamW lr 1e-5, 3 epoch, batch 8, cửa sổ 512 subword, BCE có trọng số lớp dương (1−p)/p, chọn checkpoint theo loss
@@ -124,8 +126,18 @@ python scripts/evaluate.py --task belebele --data data/tasks/belebele.jsonl \
         scored:model=runs/viword_s0,unit=word,protect=soft,delta=0.2,name=viword_pi_s0 \
     --out results/eval/belebele_qwen7b.jsonl
 
-python scripts/analyze.py --rows results/eval/*.jsonl --target viword_s0 --reference llmlingua2vi_s0
+python scripts/analyze.py --rows results/eval/*.jsonl --target viword_s0 \
+    --reference llmlingua2vi_s0 truncation lead tfidf_sent \
+    --factorial llmlingua2vi_s0 llmlingua2vi_wordpool_s0 viword_syl_s0 viword_s0
 ```
+
+`analyze.py` so `--target` với từng `--reference` (Holm riêng cho mỗi reference). Luôn đưa cả truncation, lead và
+baseline cấp câu vào làm reference, vì ở LACC các baseline đơn giản này hoà hoặc thắng bộ nén đã học. `--factorial`
+tính hiệu ứng chính (đơn vị quyết định, loại nhãn) và tương tác của thiết kế 2×2 kèm khoảng tin cậy, thay vì đọc
+bằng mắt bốn giá trị trung bình. Với ViNLI, NFR được báo thêm trên riêng các premise có phủ định: tính trên mọi cặp
+thì tác động của phủ định bị pha loãng, vì chỉ khoảng 14% số cặp có phủ định.
+
+Chạy full trên H100: [`docs/RUN_FULL_H100.md`](docs/RUN_FULL_H100.md) (`scripts/full_h100.sh`, hai pha).
 
 Các ô của thiết kế 2×2 (§2.3) chỉ khác nhau ở checkpoint và `unit`:
 

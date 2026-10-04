@@ -192,7 +192,9 @@ stage_eval() {
 stage_analyze() {
   for s in $SEEDS; do
     log "analyze seed $s"
-    python scripts/analyze.py --rows results/eval/*.jsonl --target "viword_s$s" --reference "llmlingua2vi_s$s" \
+    python scripts/analyze.py --rows results/eval/*.jsonl --target "viword_s$s" \
+      --reference "llmlingua2vi_s$s" truncation lead tfidf_sent \
+      --factorial "llmlingua2vi_s$s" "llmlingua2vi_wordpool_s$s" "viword_syl_s$s" "viword_s$s" \
       | tee "results/analysis_seed$s.md"
   done
 }

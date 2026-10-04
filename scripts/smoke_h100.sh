@@ -44,7 +44,8 @@ step_setup() {
   # shellcheck disable=SC1091
   source "$VENV/bin/activate"
   pip install -q --upgrade pip
-  pip install -q -e ".[model,eval,dev]"     # torch, transformers, vllm, datasets, pytest
+  # torch, transformers, vllm, datasets, pytest; llmlingua for translate-then-compress (full eval)
+  pip install -q -e ".[model,eval,baselines,dev]"
   python -m pytest -q tests | tail -1
   python - <<'EOF'
 import torch
@@ -117,7 +118,7 @@ step_eval() {
   log "small task files"
   head -n "$N_BELEBELE" data/tasks/belebele.jsonl > "$OUT/belebele.jsonl"
   head -n "$N_VINLI" data/tasks/vinli_test.jsonl > "$OUT/vinli.jsonl"
-  methods=(none no_context lead truncation "selective_context:lm=$LM"
+  methods=(none no_context lead truncation tfidf_sent "ppl_sent:lm=$LM" "selective_context:lm=$LM"
            "scored:model=$LL2,unit=syllable,name=llmlingua2_syl"
            "scored:model=$LL2,unit=word,name=llmlingua2_wordpool"
            "scored:model=runs/smoke_llmlingua2vi,unit=syllable,name=llmlingua2vi"
@@ -142,7 +143,8 @@ step_eval() {
 step_analyze() {
   log "analysis"
   python scripts/analyze.py --rows "$OUT"/belebele_rows.jsonl "$OUT"/vinli_rows.jsonl \
-    --target viword --reference llmlingua2vi --n-boot 2000 | tee "$OUT/analysis.md"
+    --target viword --reference llmlingua2vi truncation lead tfidf_sent \
+    --factorial llmlingua2vi llmlingua2vi_wordpool viword_syl viword --n-boot 2000 | tee "$OUT/analysis.md"
   log "Smoke test done. Send back the folder $OUT (logs, analysis.md, *_rows.jsonl)"
 }
 
