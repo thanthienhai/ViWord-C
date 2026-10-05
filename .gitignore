@@ -220,6 +220,7 @@ __marimo__/
 # ViWord-C: data, downloaded models and checkpoints are not versioned
 data/*
 !data/README.md
+!data/SHA256SUMS
 models/
 runs/
 results/eval/

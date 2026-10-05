@@ -1,5 +1,8 @@
 # Hướng dẫn chạy full ViWord-C trên máy GPU (dành cho đội vận hành)
 
+> **Đã thay bằng [`RUN_OPS.md`](RUN_OPS.md)** (một file `scripts/ops_full_run.sh`, có kiểm tra dữ liệu và chạy thử
+> các tác vụ mới). Giữ lại file này để tham khảo cách chạy từng pha bằng `full_h100.sh`.
+
 Chạy sau khi smoke test đã thành công (`docs/RUN_SMOKE_H100.md`). Lần chạy này cho **số liệu chính thức**: 3 seed ×
 2 encoder XLM-R-large × 3 epoch trên toàn bộ dữ liệu chưng cất, đánh giá trên đủ 4 tác vụ.
 
