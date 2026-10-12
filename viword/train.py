@@ -8,8 +8,10 @@ outputs one logit per syllable (mean over its subwords). What changes is the tar
                          syllables                         -> ViWord-C
 
 The decision unit (syllable or word) is chosen later, at compression time
-(`compressor.SelectionConfig.unit`). Loss: BCE with logits and a positive-class weight;
-checkpoint selection by dev loss (works with soft labels), without any reader.
+(`compressor.SelectionConfig.unit`). Loss is BCE with logits and a positive-class weight,
+computed per visible syllable. For `label_unit="word"`, the soft word target is copied to
+each syllable before this loss; the word-pooled inference logit is not used in training.
+Checkpoint selection is by dev loss, without any reader.
 """
 from __future__ import annotations
 
@@ -57,7 +59,7 @@ def _batches(items: list[dict], batch_size: int, shuffle: bool, rng: random.Rand
 
 
 def _batch_loss(model, batch, pad_id, pos_weight, device, torch):
-    """Mean BCE over syllables; syllable logit = mean of its subword logits."""
+    """Mean BCE over visible syllables; word targets are already copied to syllables."""
     width = max(len(x["input_ids"]) for x in batch)
     ids = torch.full((len(batch), width), pad_id, dtype=torch.long)
     mask = torch.zeros((len(batch), width), dtype=torch.long)

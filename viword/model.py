@@ -4,8 +4,10 @@ Works for our trained ViWord-C/LLMLingua-2-vi checkpoints (1 output logit) and f
 published LLMLingua-2 checkpoint (2 labels, label 1 = keep). Syllables are fed to the
 tokenizer as pre-split words, so XLM-R sees the same "▁"-separated units as LLMLingua-2.
 
-Pooling (DATN §3.1): syllable logit = mean of its subword logits; word logit = mean of
-its syllable logits (`pool_to_words`).
+Pooling (DATN §3.1) is fixed and hierarchical: a syllable logit is the arithmetic mean
+of its subword logits; a word logit is the arithmetic mean of its syllable logits
+(`pool_to_words`). Thus syllables, rather than subwords, have equal weight within a
+word; no alternative pooling variant is selected on dev.
 
 Long documents are split into windows of whole sentences (≤ max_length subwords) that
 overlap by one sentence; logits in the overlap are averaged.
@@ -18,6 +20,7 @@ from .segment import Document, Word, flatten, syllables_of
 
 
 def pool_to_words(syllable_values: np.ndarray, words: list[Word]) -> np.ndarray:
+    """Pool fixed syllable logits into one arithmetic-mean logit per word."""
     out, i = [], 0
     for w in words:
         n = len(w.syllables)
