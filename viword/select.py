@@ -69,11 +69,15 @@ def exact_select(scores: list[float], costs: list[int], budget: int) -> list[boo
 
 
 def trim_to_budget(keep: list[bool], scores: list[float], budget: int,
-                   count_tokens: Callable[[list[bool]], int]) -> list[bool]:
+                   count_tokens: Callable[[list[bool]], int],
+                   priority: list[int] | None = None) -> list[bool]:
     """BPE is context dependent, so Σ c_i can differ from the real length of the joined
-    text. Drop the lowest-scoring kept units until the real length fits (DATN §3.5, step 4)."""
+    text. Drop the lowest-scoring kept units until the real length fits (DATN §3.5, step 4).
+    With hard protection, unprotected units are dropped before any protected one, so the
+    trim step cannot undo the priority of the selection step."""
     keep = list(keep)
-    kept = sorted((i for i in range(len(keep)) if keep[i]), key=lambda i: scores[i])
+    priority = priority or [0] * len(keep)
+    kept = sorted((i for i in range(len(keep)) if keep[i]), key=lambda i: (priority[i], scores[i]))
     while kept and count_tokens(keep) > budget:
         keep[kept.pop(0)] = False
     return keep

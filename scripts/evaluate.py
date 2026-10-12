@@ -16,6 +16,7 @@ Usage:
 import argparse
 import gc
 import os
+import time
 
 from tqdm import tqdm
 
@@ -23,9 +24,23 @@ from viword.data import TASKS, load_contexts, load_task, read_jsonl, write_jsonl
 from viword.eval import (MAX_NEW_TOKENS, APIReader, HFReader, VLLMReader, budget_deviates,
                          build_prompt, context_budget, parse_prediction, score, tokens_per_budget)
 from viword.methods import build_compressor
+from viword.diagnose import cbr_counts
+from viword.segment import align_compressed, flatten
 from viword.select import TokenCounter
 
 UNCOMPRESSED = {"none", "no_context"}
+
+
+def row_cbr(ctx, compressed: str) -> dict:
+    """Per-example compound-break counts (DATN §2.2), for the H1 mechanism regression."""
+    if ctx.doc is None:
+        return {}
+    words = flatten(ctx.doc)
+    mask, _ = align_compressed(words, compressed)
+    counts = cbr_counts(words, mask)
+    partial, full = counts["all", "partial"], counts["all", "full"]
+    return {"cbr_partial": partial, "cbr_full": full,
+            "cbr": partial / (partial + full) if partial + full else None}
 
 
 def compress_all(args, examples, contexts) -> list[dict]:
@@ -40,7 +55,11 @@ def compress_all(args, examples, contexts) -> list[dict]:
             for ex, ctx in tqdm(list(zip(examples, contexts)), desc=f"{compressor.name} @ {ratio:.2f}"):
                 ctx.ratio = ratio
                 n_original, budget = context_budget(ctx.text, ratio, counter)
+                if hasattr(compressor, "last_stats"):
+                    compressor.last_stats = {}
+                start = time.perf_counter()
                 compressed = compressor.compress(ctx, budget, counter)
+                compress_ms = 1000 * (time.perf_counter() - start)
                 n_compressed = counter.count(compressed)
                 actual_ratio = tokens_per_budget(n_compressed, budget)
                 rows.append({"id": ex.id, "cluster": ex.cluster, "method": compressor.name,
@@ -50,6 +69,10 @@ def compress_all(args, examples, contexts) -> list[dict]:
                              "n_tokens_compressed": n_compressed,
                              "tokens_per_budget": actual_ratio,
                              "budget_deviation_5pct": budget_deviates(actual_ratio),
+                             "compress_ms": round(compress_ms, 2),  # DATN §4.4 latency
+                             **({"selection": dict(compressor.last_stats)}
+                                if getattr(compressor, "last_stats", None) else {}),
+                             **(row_cbr(ctx, compressed) if compressor.name not in UNCOMPRESSED else {}),
                              "compressed": compressed})
     return rows
 

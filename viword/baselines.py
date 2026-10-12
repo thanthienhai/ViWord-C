@@ -253,15 +253,18 @@ class Precomputed:
 def _search_rate(compress_at, budget: int, counter: TokenCounter, tolerance: float = 0.03,
                  steps: int = 12) -> str:
     """Binary search the method's own `rate` so that the output length measured with the
-    target tokenizer is within ±tolerance of the budget (DATN §4.2). Returns the best text
-    that does not exceed budget·(1+tolerance)."""
-    low, high, best = 0.01, 1.0, ""
+    target tokenizer lands in [budget·(1−tolerance), budget] (DATN §4.2). Returns the
+    longest text found that does not exceed the budget. The upper bound is the budget
+    itself, the same hard limit every mask-based method gets from `trim_to_budget`, so the
+    package baselines cannot gain up to 3% extra context."""
+    low, high, best, best_n = 0.01, 1.0, "", -1
     for _ in range(steps):
         rate = (low + high) / 2
         text = compress_at(rate)
         n = counter.count(text)
-        if n <= budget * (1 + tolerance):
-            best = text
+        if n <= budget:
+            if n > best_n:
+                best, best_n = text, n
             if n >= budget * (1 - tolerance):
                 break
             low = rate
