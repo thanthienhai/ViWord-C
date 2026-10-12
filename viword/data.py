@@ -4,8 +4,9 @@ Every task is read from a normalized JSONL file (one example per line); `data/RE
 describes how to build these files from the original releases. Belebele can also be
 loaded directly from the Hugging Face hub.
 
-`cluster` is the source document (article, premise, passage). Several examples can share
-one source, so the bootstrap resamples clusters, not examples (DATN §4.3).
+`cluster` is the source document. Its registered meaning is ViNLI=premise,
+ViMMRC=passage, Belebele=`link`, and VietNews=article (`guid`). Several examples can
+share one source, so the bootstrap resamples clusters, not examples (DATN §4.3).
 """
 from __future__ import annotations
 
@@ -20,6 +21,13 @@ TASKS = {
     "viquad": "qa",  # extractive QA (UIT-ViQuAD 2.0, answerable questions)
     "gsm8k": "math",  # compress the few-shot chain-of-thought demonstrations (vi_gsm8k)
     "oneruler": "ruler",  # long-context retrieval / aggregation (OneRuler, Vietnamese)
+}
+
+CLUSTER_SEMANTICS = {
+    "vinli": "premise",
+    "vimmrc": "passage",
+    "belebele": "link",
+    "vietnews": "article",
 }
 
 

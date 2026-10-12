@@ -64,6 +64,8 @@ def is_poem(text: str) -> bool:
 # ---------------------------------------------------------------------------- tasks
 
 def prepare_belebele(out_dir):
+    # belebele_from_hub stores the source passage's stable `link` as cluster;
+    # question_number remains part of id so questions on one passage stay grouped.
     from viword.data import belebele_from_hub
     belebele_from_hub(os.path.join(out_dir, "belebele.jsonl"))
 
@@ -73,7 +75,7 @@ def prepare_vinli(out_dir):
 
     data = load_dataset("presencesw/vinli_4_label")
     for split in ("train", "dev", "test"):
-        # the mirror has no premise id: the premise text defines the bootstrap cluster
+        # The mirror has no premise id: a stable hash of premise text defines the cluster.
         rows = [{"id": f"vinli-{split}-{i}", "cluster": short_hash(r["sentence1"]), "premise": r["sentence1"],
                  "hypothesis": r["sentence2"], "label": r["gold_label"]} for i, r in enumerate(data[split])]
         write_jsonl(os.path.join(out_dir, f"vinli_{split}.jsonl"), rows)
@@ -85,6 +87,7 @@ def prepare_vimmrc(out_dir):
 
     data = load_dataset("ura-hcmut/ViMMRC")
     for split, name in (("validation", "dev"), ("test", "test")):
+        # All questions over one article share its article-text hash as cluster.
         rows, poems, ambiguous = [], 0, 0
         for i, r in enumerate(data[split]):
             if is_poem(r["article"]):
@@ -108,6 +111,7 @@ def prepare_vietnews(out_dir, n: int = 1000, seed: int = 0):
 
     data = load_dataset("nam194/vietnews")
     for split, name in (("validation", "dev"), ("test", "test")):
+        # One article/guid is one cluster; sampling changes rows, not article identity.
         rows = [{"id": f"vietnews-{name}-{r['guid']}", "cluster": f"vietnews-{name}-{r['guid']}",
                  "context": detokenize_vietnews(r["article"]), "reference": detokenize_vietnews(r["abstract"])}
                 for r in data[split] if r["article"] and r["abstract"]]
@@ -220,7 +224,8 @@ def prepare_oneruler(out_dir, length: int = 4096, n_test: int = 100, n_dev: int 
 def prepare_paragraphs(out_path, n_per_source: int = 5000, min_syl: int = 300, max_syl: int = 1500,
                        seed: int = 0):
     """Distillation inputs (DATN §3.2): 300–1500 syllables, whole sentences only.
-    Overlap with evaluation sets is removed later by the leak check in scripts/distill.py."""
+    Overlap with evaluation sets is removed later by scripts/leak_filter.py, which checks
+    both 13-token n-grams and stable VietNews article IDs."""
     from datasets import load_dataset
 
     rows, rng = [], random.Random(seed)
