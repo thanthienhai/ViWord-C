@@ -54,6 +54,8 @@ try_run() { step "$@" || echo "$1" >> "$OUT/FAILED_STEPS"; }       # phase 1 doe
 
 check_data() {  # every data file must match the checksums committed with the code
   sha256sum --quiet -c data/SHA256SUMS || die "data differs from data/SHA256SUMS: wrong HF revision"
+  python scripts/check_segmented.py --directory data/segmented --segmenter vncorenlp \
+    || die "segmented data is missing VnCoreNLP provenance or has been modified"
   python - <<EOF | tee "$OUT/data_revision.txt"
 from huggingface_hub import HfApi
 info = HfApi().dataset_info("$HF_DATA_REPO", revision="$HF_DATA_REVISION")
@@ -100,8 +102,12 @@ EOF
 }
 
 diagnose() {  # G1 (CBR), G2 (negated ViNLI pairs), G5 on the current segmentation, with the 1.5B LM
-  bash scripts/run_pipeline.sh diagnose
-  cp results/diagnose/belebele.json results/diagnose/vinli.json results/diagnose/gate_report.md "$OUT"/
+  bash scripts/run_pipeline.sh protect_eval diagnose
+  cp results/diagnose/belebele.json results/diagnose/vinli.json results/diagnose/gate_report.md \
+    results/probe_negation_eval.md results/probe_negation_eval.json "$OUT"/
+  for report in results/diagnose/llmlingua2vi_*.json; do
+    [ -e "$report" ] && cp "$report" "$OUT"/
+  done
 }
 
 part1() {

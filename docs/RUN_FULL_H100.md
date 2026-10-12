@@ -10,8 +10,8 @@ Chia làm **hai pha**, giữa hai pha phải chờ chủ đề tài đồng ý:
 
 | Pha | Lệnh | Việc | Thời gian ước tính (1× H100) |
 |---|---|---|---|
-| 1 | `bash scripts/full_h100.sh phase1` | cổng G1/G2/G3 trên tập dev; dựng nhãn; huấn luyện 6 encoder | 4–5 giờ |
-| 2 | `bash scripts/full_h100.sh phase2` | nén + đọc trên Belebele, ViNLI, ViMMRC, VietNews; phân tích | 4–6 giờ |
+| 1 | `bash scripts/full_h100.sh phase1` | cổng G1/G2/G3 trên tập dev; dựng nhãn; huấn luyện 6 encoder; `ckpt_check` reader trên 200 mẫu dev | 4–5 giờ |
+| 2 | `bash scripts/full_h100.sh phase2` | chọn π trên dev, tính MDE, nén + đọc trên Belebele, ViNLI, ViMMRC, VietNews; phân tích | 4–6 giờ |
 
 Lý do tách pha: nếu cổng G3 không đạt, cách đánh giá ở pha 2 phải đổi. Không chạy pha 2 khi chưa được đồng ý.
 
@@ -53,7 +53,7 @@ Pha 1 **thành công** khi `full.log` kết thúc bằng `Phase 1 done`. Khi đ�
 tar czf full_phase1.tgz results/full
 ```
 
-Gồm `g123_*.md` (kết quả cổng), `distill_summary.json`, `*_train_meta.json` (6 encoder) và các log.
+Gồm `g123_*.md` (kết quả cổng), `distill_summary.json`, `*_train_meta.json` (6 encoder), báo cáo `ckpt_check` và các log.
 **Dừng ở đây, chờ chủ đề tài trả lời.**
 
 ## 2. Pha 2 (chỉ khi được đồng ý)
@@ -64,7 +64,8 @@ bash scripts/full_h100.sh phase2
 tar czf full_phase2.tgz results/full
 ```
 
-Thành công khi `full.log` kết thúc bằng `Phase 2 done`. File tar có `analysis_seed{0,1,2}.md` và thư mục `eval/`
+Thành công khi `full.log` kết thúc bằng `Phase 2 done`. Phase 2 phải chạy MDE dev và có
+`results/full/report.{md,json}` trước khi test evaluation; file tar có `analysis_3seed.md`, báo cáo MDE và thư mục `eval/`
 (kết quả từng mẫu, khoảng vài trăm MB).
 
 ## Khi gặp lỗi

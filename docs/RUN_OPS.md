@@ -134,5 +134,6 @@ GPU=1 VIWORD_VLLM_GPU_UTIL=0.7 bash ops_full_run.sh part1
 | `full.log`, `<giai đoạn>.log` | log của phase 1 và phase 2 |
 | `g123_*.md` | kết quả các cổng G1/G2/G3 trên dev (chủ đề tài xem file này trước tiên) |
 | `distill_summary.json`, `*_train_meta.json` | thống kê nhãn và thông tin huấn luyện 6 encoder |
+| `mde_dev/report.{md,json}` | MDE H1/H2 trên dev, kiểm tra lề 0,5 ROUGE-L trước test |
 | `FAILED_STEPS` | chỉ có khi `precheck` hoặc `diagnose` bị lỗi |
-| `analysis_seed{0,1,2}.md`, `eval/` | (phần 2) bảng kết quả, kiểm định và kết quả từng mẫu |
+| `analysis_3seed.md`, `eval/` | (phần 2) bảng kết quả gộp 3 seed, kiểm định và kết quả từng mẫu |

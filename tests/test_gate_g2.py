@@ -53,3 +53,8 @@ def test_gate_eval_rejects_test_split(monkeypatch):
     with pytest.raises(SystemExit, match="dev-only"):
         gate_eval_main()
 
+
+def test_pipeline_passes_dev_split_to_both_reader_gate_calls():
+    text = (Path(__file__).parents[1] / "scripts" / "run_pipeline.sh").read_text(encoding="utf-8")
+    assert text.count("gate_eval.py --split dev") >= 2
+    assert "--split test" not in text

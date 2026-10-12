@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from scripts.checkpoint_check import render_report, summarize, verify
@@ -65,3 +67,11 @@ def test_eval_verification_blocks_a_failed_report(tmp_path):
     with pytest.raises(SystemExit, match="eval is blocked"):
         verify(str(report))
 
+
+def test_pipeline_wires_checkpoint_gate_before_eval():
+    text = (Path(__file__).parents[1] / "scripts" / "run_pipeline.sh").read_text(encoding="utf-8")
+    assert "stage_ckpt_check()" in text
+    assert "--methods truncation \"$(lexprior_spec)\"" in text
+    assert "python scripts/checkpoint_check.py --verify \"$CKPT_CHECK_JSON\"" in text
+    assert "stage_eval()" in text
+    assert text.index("stage_ckpt_check()") < text.index("stage_eval()")

@@ -26,6 +26,16 @@ def test_f2_failure_switches_g1_to_package_method():
     assert report_passes({"per_ratio": {"0.333": _row()}})
 
 
+def test_diagnose_wires_both_arms_and_gate_report():
+    text = (Path(__file__).parents[1] / "scripts" / "run_pipeline.sh").read_text(encoding="utf-8")
+    assert '"scored:model=$LL2,unit=syllable,name=llmlingua2_syl"' in text
+    assert "llmlingua2" in text
+    assert "scripts/compare_llmlingua2.py" in text
+    assert "--llmlingua2-compare" in text
+    assert 'name=llmlingua2vi_s$s' in text
+    assert "--llmlingua2vi-reports" in text
+
+
 def test_post_training_cbr_gate_pools_trained_seed_reports():
     reports = [
         {"task": "belebele", "methods": {"llmlingua2vi_s0": {

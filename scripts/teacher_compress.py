@@ -2,7 +2,7 @@
 
 Used twice:
   * distillation inputs:  --input data/distill/paragraphs.jsonl --field text
-  * teacher upper bound / gate G4 on task dev sets:
+  * teacher upper bound / gate G4 on task dev/test subsets:
                           --input data/tasks/vinli_dev.jsonl --field premise --limit 200
     (the output is read by the `precomputed:` evaluation method)
 

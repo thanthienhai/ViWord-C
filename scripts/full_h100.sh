@@ -2,7 +2,7 @@
 # Full ViWord-C run on one Ubuntu GPU machine (H100 80 GB), in two phases (docs/RUN_FULL_H100.md).
 #
 #   bash scripts/full_h100.sh phase1   # gates G1/G2/G3 on dev, labels, 3 seeds x 2 encoders (~4-5 h)
-#   bash scripts/full_h100.sh phase2   # evaluation on the 4 test sets + analysis (~4-6 h)
+#   bash scripts/full_h100.sh phase2   # select π, MDE, evaluation on 4 test sets + analysis (~4-6 h)
 #
 # Send results/full/ back after each phase; start phase 2 only when the project owner says so
 # (a failed gate G3 changes the evaluation design). Needs the environment and data of the
@@ -38,9 +38,11 @@ phase1() {
   run_stages distill distill
   cp data/distill/distill_summary.json "$OUT"/
   run_stages train train
+  run_stages ckpt_check ckpt_check
   for run in runs/viword_s* runs/llmlingua2vi_s*; do
     cp "$run/train_meta.json" "$OUT/$(basename "$run")_train_meta.json"
   done
+  cp results/ckpt_check/report.md results/ckpt_check/report.json "$OUT"/
   log "Phase 1 done. Send back $OUT and wait for the go-ahead before phase 2"
 }
 
@@ -50,9 +52,17 @@ phase2() {
       [ -d "runs/${name}_s$s" ] || { log "missing runs/${name}_s$s: run phase1 first"; exit 1; }
     done
   done
+  run_stages diagnose protect_eval diagnose
+  cp results/diagnose/llmlingua2vi_*.json results/diagnose/gate_report.md "$OUT"/
+  run_stages select_pi select_pi
+  cp results/pi_selection.md results/pi_selection.stdout.md config/pi_selected.json config/pi_selected.env "$OUT"/
+  run_stages mde mde
+  cp results/mde_dev/report.md results/mde_dev/report.json "$OUT"/
+  run_stages teacher_test teacher_test  # test-set teacher upper bound; needs the teacher endpoint
   run_stages eval eval
+  run_stages bertscore bertscore
   run_stages analyze analyze
-  cp results/analysis_seed*.md "$OUT"/
+  cp results/analysis_3seed.md "$OUT"/
   mkdir -p "$OUT/eval" && cp results/eval/*.jsonl "$OUT/eval"/
   log "Phase 2 done. Send back $OUT"
 }
