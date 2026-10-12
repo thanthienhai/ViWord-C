@@ -28,6 +28,20 @@ def test_teacher_upper_bound_is_a_required_pre_eval_stage():
     assert '--limit "$TEACHER_TEST_LIMIT" --methods "precomputed:path=$teacher_path,name=teacher_upper"' in text
 
 
+def test_readme_maps_every_section_43_ablation_row():
+    text = README.read_text(encoding="utf-8")
+    for spec in (
+        "name=llmlingua2vi_s$s",
+        "name=llmlingua2vi_wordpool_s$s",
+        "name=viword_syl_s$s",
+        "name=viword_s$s",
+        "name=llmlingua2vi_force_s$s",
+        "name=viword_pi_s$s",
+        "Chưa có spec trong `stage_eval`",
+    ):
+        assert spec in text
+
+
 def test_every_method_spec_in_the_pipeline_has_a_known_name():
     # a misspelt spec (e.g. "longllingua") only fails after every earlier method has been
     # compressed on GPU, so check the names statically

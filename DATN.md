@@ -5,8 +5,11 @@
 > **Ý tưởng đề xuất (tên làm việc):** *"Đừng cắt đôi từ"* — nén prompt theo **đơn vị từ tiếng Việt** và theo
 > **chi phí token của LLM đích** (Word- and Tokenizer-Aware Prompt Compression for Vietnamese, gọi tắt **ViWord-C**).
 > **Quy mô:** ~10 tuần, nhắm hội nghị nhỏ/khu vực hoặc tạp chí tầm trung.
-> **Tài nguyên:** cụm H100 80GB (đã dùng cho LACC). LLM thầy 72B cần 2×H100 (bf16) hoặc 1×H100 với AWQ 4-bit;
-> encoder và reader 7B chỉ cần 1 GPU.
+> **Tài nguyên:** cụm H100 80GB (đã dùng cho LACC). Encoder và reader 7B chỉ cần 1 GPU; LLM thầy thực dùng là
+> **iCOMM `icmodel/icom-model-llm-ic-v3.8-27b` (27B)**, được gọi qua endpoint vLLM tương thích OpenAI
+> (`http://172.16.9.11:30048/v1`). Đề cương ban đầu dự kiến Qwen2.5-72B-Instruct, nhưng pipeline thực tế đổi sang
+> endpoint iCOMM 27B đang được cung cấp để sinh dữ liệu; đây là thay đổi về mô hình/hạ tầng, không phải thay đổi
+> phương pháp. G4 và bước chưng cất phải dùng cùng model này.
 > **Quan hệ với pilot LACC** trước đó: xem §6.
 
 ---
@@ -39,7 +42,7 @@ thanh điệu + hình thái (hạ trọng số toàn bộ hư từ) và không c
 hưởng trực tiếp tới thiết kế ViWord-C (số liệu: `../vncompress/results/report/WAVE4_REPORT.md`):
 - **Arm encoder E6 (kiểu LLMLingua-2) sụp về mức ngẫu nhiên** (needle @8x: 0.026, random 0.017) dù PR-AUC trên
   nhãn thầy đạt 0.84. Nhãn lấy từ perplexity của Qwen2.5-0.5B, PhoBERT nhận văn bản chưa tách từ, bước chọn chạy
-  trên token BPE của reader. → ViWord-C: thầy nén trích xuất 72B, tách từ trước, đơn vị = từ, kiểm tra thầy và
+  trên token BPE của reader. → ViWord-C: thầy nén trích xuất iCOMM 27B, tách từ trước, đơn vị = từ, kiểm tra thầy và
   checkpoint trên dev trước khi đánh giá đầy đủ (§3.2, §3.3).
 - **Hạ trọng số toàn bộ hư từ làm kết quả tệ hơn** (`ppl_only` thắng LACC đầy đủ). → ViWord-C chỉ bảo vệ một tập
   hẹp, có khử nhập nhằng (§3.4).
@@ -65,9 +68,12 @@ từ ghép/láy nhiều âm tiết: *học sinh, doanh nghiệp, Hà Nội, có 
 tình thái) được mã hoá **bằng hư từ và trật tự từ**, không bằng hình thái.
 
 Các bộ nén trích xuất hiện có không tính đến điều này:
-- **LLMLingua-2** gộp subword thành "từ" theo tiền tố `▁` (tức là theo dấu cách), rồi lấy trung bình xác suất
-  giữ (`__merge_token_to_word`, `is_begin_of_new_word` trong `llmlingua`). Với tiếng Việt, đơn vị quyết định
-  thực tế là **âm tiết**. Bộ phân loại lại được huấn luyện bằng nhãn **tiếng Anh** (MeetingBank).
+- **LLMLingua-2** bản công bố gộp subword thành "từ" theo tiền tố `▁` (tức là theo dấu cách), rồi lấy trung bình
+  xác suất giữ (`__merge_token_to_word`, `is_begin_of_new_word` trong `llmlingua`). Đây là baseline nguyên bản;
+  với tiếng Việt, đơn vị quyết định thực tế là **âm tiết**. Bộ phân loại lại được huấn luyện bằng nhãn **tiếng Anh**
+  (MeetingBank). Nhánh kiểm soát **LLMLingua-2 + gộp theo từ** trong thiết kế này dùng quy ước logit cố định ở
+  §2.3 (`sigmoid(mean(logit))`) để nhất quán với mọi ô 2×2, không tuyên bố tái hiện phép gộp xác suất nội bộ của
+  package nguyên bản.
 - **LLMLingua / Selective Context** bỏ token có perplexity/self-information thấp. Hư từ tần suất cao bị bỏ trước.
 - *Lost in Compression* (2608.26175) thấy tiếng Trung, cũng là ngôn ngữ đơn lập, có utility gần về 0 ở keep-rate
   0.33. Phần Thảo luận của họ **đề xuất** (chưa đo) đúng hai cơ chế này: xoá ký tự trong từ nhiều chữ tạo ra từ
@@ -86,19 +92,27 @@ Các bộ nén trích xuất hiện có không tính đến điều này:
     - **CBR** (Compound Break Rate), tính trên các từ nhiều âm tiết (theo RDRSegmenter) **còn giữ ít nhất một
       âm tiết**: CBR = số từ bị giữ một phần / (số từ bị giữ một phần + số từ được giữ trọn). Định nghĩa này ít
       phụ thuộc vào tỉ lệ nén hơn so với chia cho mọi từ nhiều âm tiết.
-    - **Mốc ngẫu nhiên:** nếu bỏ âm tiết độc lập với tỉ lệ giữ r, từ 2 âm tiết còn sót bị cắt với xác suất
-      2(1−r)/(2−r) (≈ 67% ở r = 1/2, 80% ở 1/3, 89% ở 1/5). CBR của mọi bộ nén báo cáo cạnh mốc này.
-    - **RR** (Recovery Rate): với mỗi từ bị cắt, cho một mô hình ngôn ngữ (XLM-R MLM, hoặc chính reader qua
-      prompt) điền lại âm tiết bị mất từ ngữ cảnh đã nén; RR = % điền đúng. Vết cắt không khôi phục được là
-      vết cắt có hại.
-    - CBR và RR tách theo loại từ: tên riêng; từ ghép chính phụ (*máy bay, học sinh*); từ láy và từ ghép đẳng
-      lập (*sạch sẽ, quần áo*). Cắt nhóm cuối thường ít hại.
+    - **Mốc ngẫu nhiên:** nếu bỏ âm tiết độc lập với tỉ lệ giữ r, với từ n âm tiết thì xác suất bị cắt có điều kiện
+      trên việc còn ít nhất một âm tiết là `[1 − r^n − (1−r)^n] / [1 − (1−r)^n]`. Mốc báo cáo được cộng theo
+      phân phối n âm tiết thực tế của corpus (không mặc định n = 2); mốc 2 âm tiết vẫn ghi riêng để đối chiếu.
+      CBR của mọi bộ nén báo cáo cạnh mốc theo phân phối này.
+    - **RR** (Recovery Rate): với mỗi từ bị cắt, cho XLM-R MLM (mặc định
+      `xlm-roberta-large`, hoặc chính reader qua prompt) điền lại âm tiết bị mất từ ngữ cảnh đã nén; RR = %
+      điền đúng. Với âm tiết bị mất có từ hai subword trở lên, chèn đúng số vị trí `<mask>` theo tokenizer rồi
+      giải mã chuỗi token top-1 trước khi so với âm tiết đích; không coi những trường hợp này là thất bại mặc định.
+      Vết cắt không khôi phục được là vết cắt có hại.
+    - CBR và RR tách theo loại từ: **tên riêng** (NER khác `O` hoặc POS `Np`); **từ láy** (heuristic: từ hai âm
+      tiết cùng phụ âm đầu, *sạch sẽ, lung linh*); **khác** (gồm từ ghép chính phụ *máy bay, học sinh* và từ ghép
+      đẳng lập *quần áo*). Repo không có từ điển từ ghép đẳng lập nên không tách được nhóm này khỏi ghép chính phụ;
+      heuristic láy cũng bỏ sót láy vần (*lôi thôi*) và chưa đo độ chính xác, nên chỉ báo cáo mô tả.
   - *Giả thuyết phụ:* vì mảnh còn lại thường là một từ hợp lệ, phần lớn vết cắt khó khôi phục (RR thấp).
 - **P2 — mất hư từ mang nghĩa quyết định.** Bỏ *không/chưa/chẳng/đừng* làm đảo cực tính. Bỏ *đã/đang/sẽ* làm
   mất thì. Bỏ *nếu/trừ khi/dù* biến giả định hoặc nhượng bộ thành khẳng định. Bỏ số hoặc thực thể tên làm mất
   dữ kiện. *Giả thuyết:* các bộ nén dựa trên LM và các bộ phân loại học từ nhãn tiếng Anh (nơi mạo từ và trợ từ
   vốn bị bỏ) có xu hướng bỏ nhóm này (đo ở §4.0).
-  - *Độ đo:* **tỉ lệ giữ** của từng nhóm hư từ, so với tỉ lệ giữ trung bình ở cùng mức nén.
+  - *Độ đo:* **tỉ lệ giữ** của từng nhóm hư từ, so với tỉ lệ giữ trung bình ở cùng mức nén. Một từ được tính là
+    *giữ* khi còn ít nhất một âm tiết của nó trong bản nén (từ bị cắt đôi vẫn tính là giữ; phần đó đã do CBR đo);
+    mẫu số "tất cả" là mọi từ không phải dấu câu.
     **NFR** (NLI Flip Rate) = % cặp ViNLI mà nhãn do reader dự đoán thay đổi khi premise bị nén. NFR đo độ ổn
     định, không đo độ đúng, nên luôn báo cáo kèm accuracy, NFR trên các cặp reader trả lời đúng khi chưa nén, và
     chiều lật nhãn.
@@ -122,26 +136,39 @@ Các bộ nén trích xuất hiện có không tính đến điều này:
 Mọi so sánh đều ở **cùng ngân sách, đo bằng token của LLM đích** (§4.2), dùng cùng một reader và báo cáo riêng
 từng tác vụ × reader × tỉ lệ nén {1/2, 1/3, 1/5}.
 
+**Quy ước điểm cố định:** encoder sinh logit ℓ_s cho mỗi âm tiết. Nhánh quyết định cấp âm tiết dùng
+`σ(ℓ_s)`; nhánh quyết định cấp từ dùng `σ(mean_{s∈w} ℓ_s)`, tức **gộp logit trước rồi mới áp dụng sigmoid**.
+Không dùng `mean_{s∈w} σ(ℓ_s)`. Quy ước này áp dụng cho mọi ô 2×2 và cho LLMLingua-2 gốc + gộp theo từ.
+
 - **H1 (đơn vị từ).** *Câu hỏi:* khi đã có dữ liệu giám sát bản ngữ (điều *Lost in Compression* cho là cần),
   đơn vị quyết định có còn quan trọng không? *Giả thuyết:* với *cùng* đầu ra của LLM thầy, *cùng* encoder
   XLM-R-large và *cùng* bước chọn, quyết định ở **cấp từ ngôn ngữ** (sau RDRSegmenter) cho điểm tác vụ cao hơn
   quyết định ở **cấp âm tiết** (= LLMLingua-2-vi). Kết quả theo chiều nào cũng là một phát hiện.
   - *Thiết kế 2×2:* {đơn vị nhãn: âm tiết, từ} × {đơn vị quyết định: âm tiết, từ} (§4.3). Ô (nhãn âm tiết,
-    quyết định từ) là LLMLingua-2-vi + gộp xác suất theo từ lúc suy luận, không huấn luyện lại. Nếu ô này ngang
+    quyết định từ) là LLMLingua-2-vi + gộp **logit theo từ rồi sigmoid** lúc suy luận, không huấn luyện lại. Nếu ô này ngang
     ViWord-C thì đóng góp thật là "gộp theo từ lúc suy luận", một plug-in dùng được cho mọi bộ nén (thử cả trên
     LLMLingua-2 gốc).
   - *Dự đoán phụ (cơ chế):* lợi ích tăng theo CBR của bản cấp âm tiết. Nó lớn nhất ở tỉ lệ 1/5 và gần 0 ở 1/2.
     Kiểm tra thêm ở mức từng ví dụ: hồi quy chênh lệch điểm theo CBR của chính ví dụ đó.
-  - *Kiểm định:* bootstrap ghép cặp theo cụm, một phía, Holm trên {tác vụ × tỉ lệ} với reader chính. Tác vụ
-    chính của H1 là ViMMRC và Belebele; VietNews (thiên lệch phần mở đầu, §4.1) và ViNLI chỉ báo cáo mô tả.
+  - *Kiểm định:* bootstrap ghép cặp theo cụm, một phía. Họ H1 đăng ký đúng là
+    `{ViMMRC, Belebele} × {1/2, 1/3, 1/5}` với reader chính; Holm chỉ hiệu chỉnh các ô trong họ này.
+    VietNews (thiên lệch phần mở đầu, §4.1) và ViNLI chỉ báo cáo mô tả.
 - **H2 (bảo vệ ngôn ngữ).** Thêm ưu tiên bảo vệ π làm **giảm NFR** so với cùng hệ thống không có π, **và** so
-  với LLMLingua-2-vi + `force_tokens` (bật `force_reserve_digit`) dùng cùng danh sách từ. Đồng thời ROUGE-L trên
+  với đối chứng chính `llmlingua2vi_force` (LLMLingua-2-vi + ngữ nghĩa `force_tokens`/`force_reserve_digit`: khớp
+  chuỗi danh sách P ở cấp âm tiết, không khử nhập nhằng, không NER, cùng tầng với cấu hình π được chọn). Đồng thời
+  ROUGE-L trên
   VietNews **không kém quá 0.5 điểm** (kiểm định non-inferiority).
+  Vì prompt thầy đã yêu cầu giữ phủ định, con số và tên riêng (§3.2), H2 được diễn giải là **lợi ích gia tăng của
+  π ở bước suy luận trên một encoder đã học nhãn có prior này**, không phải phép đo độc lập toàn bộ đóng góp của
+  việc bảo vệ. Kết quả phải báo cáo tách theo các premise có phủ định; không được khẳng định prompt thầy không
+  ảnh hưởng đến đối chứng π.
   - *Cấu hình chính (chỉ định trước khi chạy test):* trong các cấu hình π (tầng × soft/hard × δ) mà ROUGE-L trên
-    dev không giảm quá 0.5 điểm so với `none`, chọn cấu hình có NFR trên dev thấp nhất; hoà thì chọn cấu hình
-    bảo vệ ít từ hơn. Chỉ cấu hình này được kiểm định trên test; các cấu hình khác là khám phá (§4.4).
+    dev không giảm quá 0.5 điểm so với `none` **ở mọi tỉ lệ nén** (xét tỉ lệ tệ nhất, vì kiểm định
+    non-inferiority trên test chạy riêng từng tỉ lệ), chọn cấu hình có NFR trên dev thấp nhất; hoà thì chọn cấu hình
+    bảo vệ ít từ hơn (lưới tầng lồng nhau T1 ⊂ T1+T2 ⊂ T1+T2+T3, nên ít tầng hơn đúng là ít từ hơn). Chỉ cấu hình này được kiểm định trên test; các cấu hình khác là khám phá (§4.4).
   - *Lề non-inferiority:* lề 0.5 ROUGE-L được cố định trước khi chạy test. Lề phải lớn hơn độ lệch chuẩn giữa 3
-    seed trên dev và lớn hơn MDE (§4.3); nếu không, nới lề và ghi rõ lý do trước khi chạy test.
+    seed trên dev và lớn hơn MDE **quy về cỡ tập test** (§4.3); nếu không, nới lề và ghi rõ lý do trước khi chạy
+    test.
   - *Dự đoán phụ:* lợi ích tập trung ở các cặp có premise chứa từ phủ định. Báo cáo tách theo tầng (§3.4).
 - **H3 (nhận thức tokenizer; chỉ trong bản 8 trang).** Chọn theo s(w)/c_T(w)^α* cho điểm cao hơn chọn với
   α = 0, ở cùng ngân sách token đích.
@@ -154,8 +181,8 @@ từng tác vụ × reader × tỉ lệ nén {1/2, 1/3, 1/5}.
 
 | Cổng | Đi tiếp nếu | Nếu không |
 |---|---|---|
-| G1 — H1 | Tuần 1: CBR của LLMLingua-2 gốc ≥ 5% ở tỉ lệ 1/3, **và** gộp theo từ lúc suy luận cải thiện điểm ở ≥ 1 tác vụ × tỉ lệ. Sau tuần 4: CBR của LLMLingua-2-vi ≥ 5% ở 1/3 | hạ H1 xuống phân tích; trọng tâm sang H2 và phần chẩn đoán |
-| G2 — H2 | NFR của probe phủ định ≥ 5 điểm %, **và** có ≥ 300 cặp ViNLI có phủ định trong premise | probe < 5 điểm %: bỏ H2. Thiếu cặp: dựng bộ kiểm tra phủ định riêng (§4.1) |
+| G1 — H1 | Tuần 1: CBR của LLMLingua-2 gốc ≥ 5% ở tỉ lệ 1/3, **và** gộp logit theo từ rồi sigmoid lúc suy luận cải thiện điểm ở ≥ 1 tác vụ × tỉ lệ. Sau tuần 4: CBR của LLMLingua-2-vi ≥ 5% ở 1/3 | hạ H1 xuống phân tích; trọng tâm sang H2 và phần chẩn đoán |
+| G2 — H2 | NFR của probe phủ định ≥ 5 điểm % trên **ViNLI dev**, **và** có ≥ 300 cặp **ViNLI test** có phủ định trong premise; vế đếm chỉ dùng văn bản/ID, không dùng nhãn NLI | probe < 5 điểm %: bỏ H2. Thiếu cặp: dựng bộ kiểm tra phủ định riêng (§4.1) |
 | G3 — phạm vi | ở tỉ lệ 1/5, bộ nén cấp token tốt nhất không thua baseline cấp câu quá 5 điểm (accuracy hoặc ROUGE-L) trên đa số tác vụ | thiết kế 2 tầng (chọn câu rồi chọn từ trong các câu đã chọn), hoặc giới hạn bài ở 1/2–1/3 |
 | G4 — thầy | trên 200 mẫu dev, đầu ra nén của thầy thắng truncation ở 1/3 trên ≥ 2 tác vụ | đổi thầy hoặc prompt trước khi chưng cất 10k mẫu |
 | G5 — H3 | tương quan Spearman giữa c_T(w) và số âm tiết < 0.9 ở ít nhất 2 tokenizer | bỏ H3 |
@@ -170,53 +197,107 @@ văn bản ─► chuẩn hoá Unicode (NFC) ─► tách từ (RDRSegmenter) + 
 
 ### 3.1 Đơn vị quyết định = từ ngôn ngữ ("anchor")
 - Chuẩn hoá NFC. Văn bản tiếng Việt có thể ở dạng dấu tổ hợp (NFD), làm sai cả tách từ lẫn số token.
-- Tách từ + NER bằng **VnCoreNLP (RDRSegmenter)**. Độ nhạy với công cụ tách từ đo bằng pyvi/underthesea (§4.4).
-- Mỗi từ w được ánh xạ tới dãy subword của encoder. Logit của từ = trung bình logit các subword (thử cả lấy
-  subword đầu). Giữ/bỏ **cả từ**, nên CBR = 0 theo cách xây dựng khi đo bằng RDRSegmenter; vì vậy §4.4 báo cáo
-  thêm CBR của ViWord-C khi đo bằng một bộ tách từ khác. Dấu câu là đơn vị riêng.
-- **Gộp điểm cấp từ:** thử trung bình (mặc định) và p_keep × n_syl(w) (điểm tăng theo độ dài từ); chọn trên dev.
-  Lựa chọn này ảnh hưởng trực tiếp tới H3 (§2.3).
+- Tách từ + POS + NER bằng **VnCoreNLP (RDRSegmenter)**. Mỗi file cache `data/segmented/*.jsonl` phải có
+  sidecar provenance ghi `vncorenlp` và SHA-256; sidecar viết hồi tố chỉ được chấp nhận sau khi
+  `scripts/verify_segmentation.py` tách lại một mẫu ngẫu nhiên bằng VnCoreNLP và khớp hoàn toàn. Mọi stage đọc
+  `data/segmented` đều kiểm tra điều này trước. Độ nhạy với công cụ tách từ đo riêng bằng pyvi/underthesea (§4.4),
+  không trộn vào các ô chính.
+- *Sự cố đã sửa (12/10/2026):* các cache ViNLI, ViMMRC, VietNews, Belebele và kho chưng cất trước đây ghi là
+  VnCoreNLP nhưng thực ra do **underthesea** sinh (khớp từng byte với underthesea trên mẫu thử, khác VnCoreNLP 1.2 ở
+  ranh giới từ, POS và NER). Các file này đã được tách lại bằng VnCoreNLP và nhãn chưng cất được dựng lại (không gọi
+  lại thầy); bản cũ giữ ở `data/segmented_legacy_underthesea/` chỉ cho phân tích độ nhạy §4.4. Mọi số liệu chẩn
+  đoán/smoke tính trước ngày này dùng đơn vị từ của underthesea và phải tính lại.
+- Mỗi âm tiết được ánh xạ tới dãy subword của encoder và nhận **logit bằng trung bình số học logit các subword**.
+  Sau đó, logit của từ là **trung bình số học logit các âm tiết của từ**. Đây là phép gộp hai tầng cố định
+  (subword → âm tiết → từ): các âm tiết có trọng số như nhau trong một từ, không phụ thuộc số subword; không
+  thử biến thể lấy subword đầu hay nhân p_keep × n_syl trên dev. Giữ/bỏ **cả từ**, nên CBR = 0 theo cách xây dựng
+  khi đo bằng RDRSegmenter; vì vậy §4.4 báo cáo thêm CBR của ViWord-C khi đo bằng một bộ tách từ khác. Dấu câu
+  là đơn vị riêng.
 - **Chính sách dấu câu** giống hệt nhau giữa ViWord-C và LLMLingua-2-vi; nếu không, H1 không còn cô lập được biến.
+- **Ghép văn bản trong H1:** cả bốn ô 2×2, gồm LLMLingua-2-vi và ViWord-C ở `unit=syllable|word`, đều chọn
+  cùng kiểu mặt nạ âm tiết rồi đi qua `viword.segment.render()`. Vì vậy cùng một mặt nạ luôn cho cùng một chuỗi,
+  kể cả khoảng trắng trước/sau dấu câu. LLMLingua-2 bản package, `translate` và `precomputed` không đi qua
+  `render()`; chúng là baseline/cận trên ngoài phép so sánh H1 (lần lượt dùng đầu ra text của package, ngữ cảnh
+  English của Belebele, và đầu ra thầy đã lưu).
 - Văn bản dài: chia cửa sổ trượt theo ranh giới câu (XLM-R ≤ 512 subword), trùng lặp 1 câu;
-  logit của từ nằm trong vùng trùng lấy trung bình.
+  logit của từ nằm trong vùng trùng lấy trung bình. Câu dài hơn 200 âm tiết được cắt thành các đoạn 200 âm tiết
+  trước khi ghép cửa sổ, để mỗi đoạn vừa một cửa sổ; khi đó ranh giới cửa sổ có thể rơi giữa câu. Mọi âm tiết
+  đều được phủ (có test).
 
 ### 3.2 Nhãn chưng cất: một đầu ra thầy, hai cách nhìn nhãn
 - Nguồn: VietNews + Wikipedia tiếng Việt, 5k–10k đoạn (300–1500 âm tiết). **Loại khỏi tập train mọi bài có
   trong test VietNews.**
-- **Kiểm tra rò rỉ tự động:** loại khỏi tập train mọi đoạn trùng n-gram với premise ViNLI (premise lấy từ báo,
-  có thể trùng VietNews), test VietNews, ViMMRC và Belebele; ghi số đoạn bị loại. Script dừng với lỗi nếu không
-  tìm thấy tập test để so, không được bỏ qua trong im lặng (bài học holdout của LACC).
-- LLM thầy (Qwen2.5-72B-Instruct; GPT-4o-mini làm phương án phụ nếu còn được cung cấp) nén trích xuất: *chỉ
-  xoá, không đổi thứ tự, không thêm, không viết lại*. Mỗi đoạn được sinh ở 2 mức nén (≈1/2 và ≈1/4) để nhãn đủ
-  đa dạng.
+- **Kiểm tra rò rỉ tự động:** index bắt buộc phải có ViNLI, VietNews, ViMMRC, Belebele và các split dev/test tương
+  ứng; file thiếu/rỗng làm pipeline dừng. Loại khỏi tập train mọi đoạn trùng n-gram 13 token với các context/premise
+  đó. Ngoài ra có một bộ lọc bảo thủ theo GUID VietNews (`news-{guid}` với `vietnews-{dev|test}-{guid}`), nhưng
+  GUID của `nam194/vietnews` chỉ là số thứ tự trong từng split, không phải mã bài (101 GUID xuất hiện ở cả dev
+  và test với hai bài khác nhau). Vì vậy khớp GUID **không** có nghĩa là trùng bài; bộ lọc chỉ loại thêm khoảng 100
+  đoạn không liên quan và được giữ lại để bản dữ liệu đã đóng băng tái lập được. Kiểm tra rò rỉ thật sự là n-gram.
+  Log ghi coverage và số đoạn bị loại theo nguồn/lý do; không được bỏ qua lỗi holdout trong im lặng (bài học
+  holdout của LACC).
+- **LLM thầy thực dùng:** iCOMM `icmodel/icom-model-llm-ic-v3.8-27b` (27B), gọi qua endpoint vLLM tương thích
+  OpenAI. Bản đề cương ban đầu ghi Qwen2.5-72B-Instruct, nhưng đã đổi vì pipeline thực tế dùng endpoint iCOMM 27B
+  đang được cung cấp để sinh các đầu ra thầy; các file `teacher*.jsonl` hiện tại không phải đầu ra của Qwen 72B.
+  Model này nén trích xuất: *chỉ xoá, không đổi thứ tự, không thêm, không viết lại*. Mỗi đoạn được sinh ở 2 mức nén
+  (≈1/2 và ≈1/4) để nhãn đủ đa dạng. Không dùng GPT-4o-mini làm fallback trong bộ dữ liệu hiện tại; nếu đổi
+  `TEACHER_MODEL`, phải chạy lại G4 trước khi chưng cất.
 - Đầu vào cho thầy là **văn bản gốc chưa tách từ**. Không đưa dạng `học_sinh` để thầy không bị "ép" giữ nguyên
   từ; nhờ vậy ta đo được CBR của chính thầy.
+- Prompt thực tế (xem `viword/distill.py`) cụ thể hoá các ràng buộc trên: mọi từ đầu ra phải có trong nguồn,
+  đúng thứ tự/cách viết, không thêm dấu câu, không viết lại, không viết tắt, không dùng từ đồng nghĩa hay dịch.
+  Lệnh pipeline truyền trường `text` chưa tách từ cho thầy và sinh hai mức `--rates 0.5 0.25` trước khi căn chỉnh
+  với file đã tách từ.
+- Prompt cũng dặn thầy giữ **sự kiện, con số, tên riêng và phủ định**. Vì vậy nhãn chưng cất đã chứa một prior
+  bảo vệ một phần các thành phần mà π hướng tới, đặc biệt là phủ định; đây là một giới hạn diễn giải chứ không phải
+  một phép thử prompt-ablation đã chạy. Khi đổi câu lệnh prompt, phải sinh lại nhãn và chạy lại G4.
 - **Kiểm tra thầy trước khi chưng cất (cổng G4):** chạy thầy trên 200 mẫu dev và đo (a) điểm tác vụ của đầu ra
   thầy so với truncation, (b) CBR của thầy, (c) tỉ lệ đầu ra bị loại vì thầy viết lại thay vì chỉ xoá. Bài học
   E6 của LACC: encoder có thể học rất giỏi một nhãn tồi.
-- Căn chỉnh: tìm dãy con chung dài nhất (LCS) giữa âm tiết gốc và âm tiết đầu ra; bỏ đoạn có alignment gap lớn
-  (theo tiêu chí lọc của LLMLingua-2).
+- Căn chỉnh: tách văn bản nguồn và đầu ra thành token chữ/số/dấu câu sau `normalize()`, rồi tìm **LCS chính xác**
+  bằng Hunt–Szymanski trên chuỗi token. Mỗi token khớp đánh dấu âm tiết gốc sở hữu nó; token lặp chỉ được ghép
+  theo thứ tự nguồn. Tỉ lệ `unmatched_ratio` là phần token chữ/số của đầu ra không nằm trong LCS, nên đầu ra đổi
+  thứ tự hoặc viết lại bị phát hiện thay vì dùng `difflib.SequenceMatcher`.
+- Lọc thực dùng của ViWord-C là ngưỡng cố định: bỏ nếu `unmatched_ratio > 0.10` hoặc `keep_rate > 0.90` (`scripts/distill.py`).
+  Đây **không phải** tiêu chí gốc của LLMLingua-2: implementation công bố ([`label_word.py`](https://github.com/microsoft/LLMLingua/blob/main/experiments/llmlingua2/data_collection/label_word.py), [`filter.py`](https://github.com/microsoft/LLMLingua/blob/main/experiments/llmlingua2/data_collection/filter.py)) tính
+  `variation_rate` theo việc token đầu ra có xuất hiện ở đâu đó trong nguồn và `alignment_gap` giữa hitting/matching,
+  rồi bỏ hai nhóm ở trên phân vị 90% (xấp xỉ 20% mẫu), không dùng ngưỡng 10%/90% cố định. Vì vậy repo phải gọi
+  đây là chính sách lọc riêng, không ghi “theo tiêu chí LLMLingua-2”.
 - Từ cùng một căn chỉnh sinh **hai cách nhìn nhãn**:
   - *cấp âm tiết*, dùng cho LLMLingua-2-vi;
-  - *cấp từ*: **nhãn mềm** = tỉ lệ âm tiết của từ được thầy giữ (từ 2 âm tiết nhận 0, 0.5 hoặc 1), huấn luyện
-    bằng BCE với target mềm. Nhãn mềm thay cho quy tắc "giữ nếu ≥ 50% âm tiết được giữ": quy tắc đó biến mọi
+  - *cấp từ*: **nhãn mềm** = tỉ lệ âm tiết của từ được thầy giữ (từ 2 âm tiết nhận 0, 0.5 hoặc 1). Khi huấn luyện,
+    target mềm của từ được chép cho từng âm tiết của từ và đưa vào BCE cấp âm tiết. Nhãn mềm thay cho quy tắc
+    "giữ nếu ≥ 50% âm tiết được giữ": quy tắc đó biến mọi
     trường hợp hoà 1/2 thành "giữ", làm lệch phân phối lớp so với nhãn cấp âm tiết. Báo cáo tỉ lệ từ bị thầy
-    giữ một phần.
+    giữ một phần. Cụ thể, `word_labels[w]` là trung bình nhãn 0/1 của đúng các âm tiết thuộc `w`; nếu lặp nhãn
+    mềm này về từng âm tiết thì trung bình có trọng số theo số âm tiết **bằng đúng `keep_rate`**. `teacher_cbr`
+    được tính trên các từ nhiều âm tiết còn giữ ít nhất một âm tiết: số từ bị giữ một phần chia cho tổng số từ bị
+    giữ một phần và giữ trọn. `scripts/distill.py` báo cáo cả trung bình theo mẫu, CBR gộp toàn corpus và hai số đếm.
 
   Hai hệ thống chỉ khác ở đơn vị nhãn và đơn vị quyết định. Đây là điều kiện để H1 cô lập được biến.
 
 ### 3.3 Encoder và huấn luyện
 - **XLM-R-large** (560M, cùng backbone LLMLingua-2): dùng cho **mọi kiểm định H1–H3**.
 - PhoBERT-base: không thuộc phần chính; chỉ đưa vào phụ lục nếu còn thời gian.
-- Loss BCE cấp từ với target mềm, có trọng số lớp (tỉ lệ giữ ≈ 30–50%), AdamW, 3 epoch, chọn checkpoint theo
-  loss BCE trên dev (dùng được với nhãn mềm; F1 trên các nhãn cứng báo cáo kèm), không dùng reader. Chạy 3 seed;
-  báo cáo trung bình ± độ lệch chuẩn.
+- **Loss BCE cấp âm tiết:** logit của mỗi âm tiết (trung bình logit subword) được so với target; với
+  `label_unit=word`, target mềm của từ được chép cho từng âm tiết rồi tính BCE trên từng âm tiết. Vì vậy từ dài
+  đóng góp nhiều hạng loss hơn và logit đã gộp ở cấp từ chỉ được dùng lúc suy luận (§2.3, §3.1), không dùng trong
+  objective huấn luyện. Loss có trọng số lớp (tỉ lệ giữ ≈ 30–50%), AdamW, 3 epoch, chọn checkpoint theo loss BCE
+  trên dev (dùng được với nhãn mềm; F1 trên các nhãn cứng báo cáo kèm), không dùng reader. Chạy 3 seed; báo cáo
+  trung bình ± độ lệch chuẩn.
 - **Kiểm tra nhanh checkpoint:** F1 trên nhãn dev chưa đủ (E6 của LACC: PR-AUC 0.84 nhưng ngang ngẫu nhiên ở tác
   vụ). Sau khi chọn checkpoint, chạy 200 mẫu dev qua reader: checkpoint phải thắng truncation và đối chứng tra từ
-  (§4.2) trước khi đánh giá đầy đủ. Đây là kiểm tra đạt/không đạt trên dev, không dùng để chọn checkpoint.
+  (§4.2) trước khi đánh giá đầy đủ. Pipeline thực hiện bằng stage `ckpt_check` ở tỉ lệ 1/3 trên 200 mẫu của từng
+  dev set cổng (ViNLI, ViMMRC, VietNews): mọi checkpoint ViWord-C (`viword_s*`) phải thắng `truncation` **và**
+  `lexprior` (đối chứng tra từ, fit trên phần train của encoder) trên **đa số** dev set, cùng quy tắc đa số với G4,
+  vì VietNews có thiên lệch phần mở đầu mạnh tới mức chính thầy thua truncation. Checkpoint LLMLingua-2-vi là đối
+  chứng nên chỉ được báo cáo, không chặn pipeline. Đây là kiểm tra đạt/không đạt trên dev, không dùng để chọn
+  checkpoint; `eval` bị chặn nếu báo cáo JSON không ghi `PASS`.
 
 ### 3.4 Ưu tiên bảo vệ ngôn ngữ π(w)
-Tập bảo vệ **P** gồm các cặp **(từ, nhãn POS)** theo VnCoreNLP, không phải chuỗi ký tự. P chia tầng để phân tích:
+Tập bảo vệ **P** được xác định theo **từ + ngữ cảnh**, không chỉ theo chuỗi ký tự. Cụ thể trong code: thực thể
+tên lấy từ nhãn NER, số lấy từ POS `M` hoặc chữ số, các từ trong bảng dưới khớp theo mặt chữ (đã tách từ), và năm
+từ đa nghĩa *mới, phải, nên, chỉ, kém* chỉ được bảo vệ khi luật POS/ngữ cảnh chấp nhận; phủ định có thêm luật ngữ
+cảnh riêng. Các từ còn lại của bảng không có ràng buộc POS. P chia tầng để phân tích:
 
 | Tầng | Nội dung | Lý do |
 |---|---|---|
@@ -227,27 +308,56 @@ Tập bảo vệ **P** gồm các cặp **(từ, nhãn POS)** theo VnCoreNLP, kh
 - **Không** bảo vệ *các, những, cái, con*: mang ít nghĩa, bảo vệ chỉ tốn ngân sách.
 - **Khử nhập nhằng** bằng luật ngữ cảnh + POS (VnCoreNLP):
   - *không* đứng cuối câu hỏi (*có … không?*) là trợ từ nghi vấn, không phải phủ định; tương tự *chưa* cuối câu
-    hỏi (*đã … chưa?*);
-  - *không* trước lượng từ/danh từ số (*không độ*) là số 0;
+    hỏi (*đã … chưa?*). Luật cho phép trợ từ cuối câu xen giữa (*không ạ?, chưa nhỉ?, … hả?*). **Giới hạn:** câu
+    hỏi không có dấu `?` không được nhận ra, và *không ạ.* (lời đáp "không") vẫn là phủ định;
+  - *không* đọc như số 0 (POS `M`, hoặc trước *độ, giờ, phẩy, chấm*: *không độ, không giờ, không phẩy năm*)
+    không phải phủ định; nó vẫn thuộc T1 với tư cách số. *không* trước một chữ số (*không 3 người*) vẫn tính là
+    phủ định;
   - *không những / không chỉ … mà còn* là cấu trúc tăng tiến, không phải phủ định; *chẳng hạn* nghĩa là "ví dụ";
   - từ đa nghĩa, phân biệt bằng POS: *mới* (vừa mới / mới = new), *phải* (phải = must / bên phải / phải không),
-    *nên* (nên = should / vì vậy nên), *chỉ* (chỉ = only / sợi chỉ / chỉ đường), *kém* (kém hơn / học kém),
-    *được* (bị động / có thể / nhận);
-  - *có* chỉ là tình thái khi đi trong *có thể*.
-  - Ở cấp từ, *không khí, hàng không, không gian* là một đơn vị nên không bị nhầm với phủ định. Ở cấp âm tiết,
-    `force_tokens=["không"]` bảo vệ nhầm cả các chữ *không* này, vừa tốn ngân sách vừa tạo mảnh từ. Dùng làm
-    Hình 1.
-- **Đánh giá bộ phát hiện P:** gán nhãn tay ~200 câu (lấy từ VietNews và ViNLI), báo cáo precision/recall theo
-  tầng. Danh sách + luật + tập gán nhãn công bố kèm bài.
+    *nên* (nên = should / vì vậy nên), *chỉ* (chỉ = only / sợi chỉ / chỉ đường), *kém* (kém hơn / học kém);
+  - *được* chưa có luật khử nhập nhằng riêng: từ đơn *được* không nằm trong P, còn cụm *được phép* chỉ được
+    bảo vệ khi bộ tách từ trả về đúng một `Word` như trong lexicon;
+  - *có thể* chỉ là tình thái khi bộ tách từ trả về đúng một `Word` nhiều âm tiết; nếu tách thành *có* + *thể*,
+    code hiện tại không gộp hai token để áp dụng luật này.
+  - Ở cấp từ, *không khí, hàng không, không gian* là một đơn vị nên không bị nhầm với phủ định. Bản legacy
+    `force_tokens=["không"]` ở cấp chuỗi âm tiết bảo vệ nhầm cả các chữ *không* này, vừa tốn ngân sách vừa tạo
+    mảnh từ; đây là sai khác của baseline package, không phải đường H2 chính. Dùng làm Hình 1.
+- **Đánh giá bộ phát hiện P:** gán nhãn **mù** trên phiếu `data/annot/protect_sheet.jsonl` do
+  `scripts/make_annotation_sheets.py` sinh: 100 premise ViNLI dev và 100 câu lấy ngẫu nhiên từ bài VietNews dev,
+  lấy mẫu đều (có cả câu không chứa từ nào thuộc P, để đo được recall). Phiếu chỉ cho thấy từ, POS, NER, **không**
+  cho thấy dự đoán của bộ phát hiện. `scripts/evaluate_protect.py` chỉ nhận phiếu `blind-v1` đã điền đủ và từ trên
+  phiếu phải khớp bản tách từ hiện hành; kết quả P/R/F1 theo T1–T3 ghi vào `results/protect_eval.{md,json}`. Chạy
+  **trước** khi chọn cấu hình π; thay đổi luật hoặc bộ tách từ phải gán lại. *Sự cố đã sửa:* bộ nhãn trước đây
+  (`data/annot/invalid_detector_prefilled/`) trùng 200/200 với đầu ra của chính bộ phát hiện (P = R = 1.000 theo
+  cách xây dựng), nên bị loại.
+- **Kiểm tra riêng probe phủ định (G6):** phiếu mù `data/annot/probe_sheet.jsonl` gồm 50 premise **khác nhau** mà
+  `probe_negation` sửa và 50 premise nó không sửa, trộn lẫn, không cho biết nhóm. ViNLI dev chỉ có 42 premise chứa
+  phủ định nên phiếu lấy premise từ cả ViNLI dev và train (không dùng test). `scripts/evaluate_probe.py` yêu cầu ≥ 50
+  premise khác nhau bị probe sửa; G6 đạt khi precision ≥ 95% trên nhóm này; recall tính từ nhóm không bị sửa. Hai mẫu
+  *không kích* và *không lâu* được kiểm thử như ngoại lệ không phải phủ định.
 - Biến thể:
   - `none`;
   - `soft`: s(w) = p_keep(w) + δ·1[w ∈ P], δ ∈ {0.1, 0.2, 0.3, 0.5} (chỉ dò trên dev);
-  - `hard`: xếp P lên trước, tương đương `force_tokens` nhưng ở cấp từ, có khử nhập nhằng.
+  - `hard`: xếp P lên trước ở cấp từ, có khử nhập nhằng;
+  - `force`: ngữ nghĩa `force_tokens` cho đối chứng H2: khớp chuỗi danh sách P (mục nhiều âm tiết khớp theo dãy âm
+    tiết) cộng chữ số, ở cấp âm tiết, không khử nhập nhằng, không NER;
+  - `force_ctx` (ablation): P đã khử nhập nhằng và có NER theo từng `Word`, mở rộng xuống âm tiết.
 
   Trên test chỉ báo cáo `none` và **một** cấu hình π, chọn theo quy tắc ở §2.3 (H2). Các tầng và soft/hard để ở
   phân tích (§4.4).
-- Đối chứng bắt buộc: LLMLingua-2-vi + `force_tokens` = cùng danh sách, bật `force_reserve_digit` (không khử
-  nhập nhằng, cấp âm tiết).
+- **Đối chứng H2 chính thức:** `llmlingua2vi_force_s*` dùng checkpoint LLMLingua-2-vi, quyết định cấp âm tiết và
+  `protect=force` với **cùng tầng** như cấu hình π được chọn (`tiers=$PI_TIERS`). Đây đúng là thiết kế ban đầu:
+  cùng danh sách từ, bật `force_reserve_digit`, không khử nhập nhằng, cấp âm tiết; nhờ đó H2 đo được giá trị của
+  việc bảo vệ ở cấp từ **có** khử nhập nhằng so với `force_tokens` thông thường. Một bản trung gian từng dùng P đã
+  khử nhập nhằng cho đối chứng này; bản đó nay là ablation `llmlingua2vi_forcectx_s*` (`protect=force_ctx`), báo
+  cáo mô tả để tách "đơn vị từ" khỏi "khử nhập nhằng + NER".
+- `llmlingua2_force` là baseline package LLMLingua-2 gốc, cũng nhận cùng P động qua `force_tokens` và bật
+  `force_reserve_digit`; dùng để chẩn đoán tác động của package/model, **không** thay thế đối chứng H2 chính vì
+  checkpoint và cơ chế chọn khác. Cách cũ `naive_syllable_protection` chỉ khớp chuỗi âm tiết đơn và chữ số,
+  không có cụm/NER/ngữ cảnh, nên không còn được dùng cho hàng H2. Vì API package nhận danh sách chuỗi chứ không
+  nhận mask theo vị trí, một mặt chữ lặp ở hai ngữ cảnh POS khác nhau có thể bị ép ở cả hai vị trí; đây là sai khác
+  đã ghi nhận của baseline package, còn `llmlingua2vi_force_s*` giữ khử nhập nhằng theo từng `Word`.
 
 ### 3.5 Chọn từ theo chi phí token đích (H3, chỉ trong bản 8 trang)
 Cho tokenizer đích T và ngân sách B_T (token của T, chỉ tính **phần ngữ cảnh**, không tính chỉ dẫn/câu hỏi):
@@ -259,18 +369,31 @@ Cho tokenizer đích T và ngân sách B_T (token của T, chỉ tính **phần 
    theo tỉ số này), rồi đến phần còn lại.
 3. **Bước lấp:** sau khi dừng, duyệt các từ chưa chọn theo s(w) giảm dần và thêm từ nào còn vừa ngân sách.
 4. **Kiểm tra độ dài thật:** ghép lại và đếm bằng T. BPE phụ thuộc ngữ cảnh nên Σ c_T có thể lệch; nếu vượt thì
-   bỏ dần các từ có s thấp nhất cho đến khi khớp. Báo cáo độ lệch trung bình.
+   bỏ dần các từ có s thấp nhất cho đến khi khớp. Với `hard`, các từ ngoài P bị bỏ trước mọi từ thuộc P. Mỗi dòng
+   kết quả ghi Σ c_T, độ dài thật trước bước cắt, độ lệch, số đơn vị bị cắt và số token dành cho P
+   (trường `selection`), để báo cáo độ lệch trung bình và phần ngân sách P chiếm (rủi ro 3, §7).
 
 - α ∈ {0, 0.25, 0.5, 0.75, 1}, chỉ dò trên dev. α = 0 là chọn theo điểm thuần, tương đương LLMLingua-2; α = 1
   là knapsack tham lam cổ điển. Trên test chỉ báo cáo α = 0 và α*.
 - **Mốc chính xác:** với n ~ 1000 từ và B_T ~ 1000 token, knapsack 0/1 giải đúng bằng quy hoạch động
-  (O(n·B_T) ≈ 10⁶ phép tính). Báo cáo khoảng cách giữa tham lam + bước lấp và lời giải DP.
+  (O(n·B_T) ≈ 10⁶ phép tính). Báo cáo khoảng cách giữa tham lam + bước lấp và lời giải DP bằng
+  `scripts/greedy_gap.py` (tỉ số mục tiêu Σs tham lam / Σs DP, trung bình và tệ nhất, trước bước cắt).
 - **Đối chứng độ dài:** chạy lại với c_T(w) thay bằng n_syl(w) (§2.3, H3).
 - **Tương tác với số:** tokenizer của Llama-3/Qwen tách số theo chữ số nên số đắt. Với α > 0, báo cáo tỉ lệ giữ
   số (thuộc T1) để thấy α có làm bỏ số không.
 - **Chọn siêu tham số không phụ thuộc reader đánh giá:** α và δ chọn **một lần** trên dev (500 mẫu VietNews +
   500 ViNLI) với *một* reader (Qwen2.5-7B), rồi **cố định** cho mọi reader, tác vụ và tokenizer. Báo cáo riêng
   α* chuyển sang reader khác tốt đến đâu.
+- **Chọn α (stage `select_alpha`, `scripts/select_alpha.py`):** chạy trên cấu hình π đã chọn, lưới α ∈ {0.25, 0.5,
+  0.75, 1} cho c_T và, riêng, cho đối chứng n_syl. Quy tắc (cố định trước khi chạy test): α* làm cực đại mức tăng
+  trung bình so với α = 0 của độ đo chính (điểm ROUGE-L hoặc accuracy), trung bình đều trên 2 tác vụ dev × 3 tỉ lệ
+  × 3 seed; α = 0 cũng là ứng viên, hoà thì chọn α nhỏ hơn. Kết quả ghi `config/alpha_selected.{json,env}`; hàng H3
+  chỉ được thêm vào `stage_eval` khi file này đã commit.
+- **Chọn cấu hình π:** `scripts/select_pi.py` quét `T1`, `T1+T2`, `T1+T2+T3` × `soft|hard` × δ (`0.1, 0.2,
+  0.3, 0.5`; `hard` dùng δ=0) trên 500 mẫu ViNLI + 500 VietNews dev cho từng seed đã chạy. ROUGE-L VietNews
+  được so với cùng checkpoint `viword_s*` ở π=`none`; NFR ViNLI là tỉ lệ lật dự đoán so với `none` không nén.
+  Loại cấu hình mất quá 0.5 điểm ROUGE-L, rồi chọn NFR thấp nhất; hoà thì chọn ít tầng bảo vệ hơn. Quyết định
+  được ghi vào `config/pi_selected.json`/`.env` và phải được commit trước `stage_eval`; test chỉ dùng cấu hình đó.
 - Đổi T chỉ đổi c_T, không cần huấn luyện lại.
 - Novelty: *Lost in Compression* **đánh giá** với ngân sách khớp tokenizer đích; ta **đưa chi phí đó vào bước
   chọn**.
@@ -290,20 +413,32 @@ Arm:
 - mốc: không nén, `no_context`, bỏ từ ngẫu nhiên, Lead-k, truncation, chọn theo câu (TF-IDF và bộ chọn câu theo
   perplexity, §4.2);
 - bộ nén có sẵn: LLMLingua-2 (bản công bố), LLMLingua (LM đủ mạnh), Selective Context;
-- **LLMLingua-2 + gộp xác suất theo từ lúc suy luận** (không huấn luyện lại): ô rẻ nhất của thiết kế 2×2, cho tín
+- **LLMLingua-2 + gộp logit theo từ rồi sigmoid lúc suy luận** (không huấn luyện lại): ô rẻ nhất của thiết kế 2×2, cho tín
   hiệu sớm về H1.
 
 Độ đo (§2.2):
 - **CBR** có điều kiện, cạnh mốc ngẫu nhiên; **RR**; cả hai tách theo loại từ.
+- **RR** dùng `xlm-roberta-large` trong pipeline (`RR_MODEL` có thể ghi đè). Mỗi âm tiết bị xoá được biểu diễn
+  bằng số `<mask>` bằng số subword mà tokenizer dùng; đầu ra multi-mask được gom và giải mã theo từng âm tiết.
+  Vì vậy mô hình RR và quy tắc đo khớp với định nghĩa ở §2.2, kể cả âm tiết tách thành từ hai subword.
 - **Tỉ lệ giữ** từng tầng hư từ T1/T2/T3, so với tỉ lệ giữ trung bình.
 - **Fertility**, **CV_T** và tương quan c_T(w)–số âm tiết của 5 tokenizer đích.
 - **Probe phủ định:** chỉ xoá từ phủ định khỏi premise ViNLI, đo NFR với 1 reader; **đếm số premise có phủ định**.
+- **Tách nguồn cho G2:** `scripts/gate_eval.py --split dev` tính NFR trên các cặp của `vinli_dev` mà probe thực sự làm thay đổi
+  premise; lệnh này bị chặn nếu truyền `--split test`. Phần đếm độc lập của `scripts/gate_report.py` chạy trên
+  `vinli_test` và chỉ chiếu các trường `id`, `cluster`, `doc` trước khi tính, nên không sử dụng trường nhãn NLI. Vì vậy
+  test chỉ cung cấp văn bản cho vế đếm đã định trước, không cung cấp nhãn hoặc điểm reader để chọn cấu hình/đánh giá NFR.
 - Kết quả tách theo loại bộ nén (học nhãn tiếng Anh / perplexity / tất định), theo phần hoà giải ở §1.
+- **Hoà giải F2:** `scripts/compare_llmlingua2.py` so mặt nạ của `scored:...unit=syllable` với package gốc trên
+  100 tài liệu nguồn ở ngân sách 1/3. Nếu mặt nạ không trùng ít nhất 95% hoặc CBR lệch từ 1 điểm phần trăm trở lên,
+  `gate_report.py` dùng method package `llmlingua2` cho G1; nếu đạt, giữ `llmlingua2_syl`.
 
 Thử thầy trên 200 mẫu dev (§3.2, cổng G4).
 
 Sau khi huấn luyện xong (tuần 2–4), lặp lại CBR cho **LLMLingua-2-vi** (đã huấn luyện trên dữ liệu tiếng Việt,
-xem rủi ro 6).
+xem rủi ro 6). Lệnh `bash scripts/run_pipeline.sh diagnose` tự phát hiện các checkpoint
+`runs/llmlingua2vi_s*`, chạy `scripts/diagnose.py` trên cùng hai corpus chẩn đoán ở tỉ lệ 1/3, rồi
+`gate_report.py` báo cáo từng seed và CBR gộp; vế sau của G1 dùng CBR gộp và ngưỡng ≥ 5%.
 
 → Áp dụng các cổng G1–G5 (§2.3). Kết quả là Bảng 1 (và Hình 1) cùng một trang ghi quyết định đi tiếp/đổi hướng.
 Kể cả khi mọi cổng đều đóng, bảng chẩn đoán này vẫn đủ cho một bài workshop.
@@ -311,11 +446,17 @@ Kể cả khi mọi cổng đều đóng, bảng chẩn đoán này vẫn đủ 
 ### 4.1 Tác vụ đánh giá
 | Tác vụ | Dữ liệu | Cái gì bị nén | Độ đo |
 |---|---|---|---|
-| Tóm tắt | **VietNews** (test, lấy mẫu 1000) | bài báo | ROUGE-1/2/L, BERTScore (PhoBERT) |
+| Tóm tắt | **VietNews** (test, lấy mẫu 1000) | bài báo | ROUGE-1/2/L (tự cài trên âm tiết), BERTScore (PhoBERT-base, lớp 10, đầu vào tách từ bằng VnCoreNLP; stage `bertscore`) |
 | Suy luận ngôn ngữ (nhạy phủ định) | **ViNLI** (Huynh et al., COLING 2022) | premise (giữ nguyên hypothesis) | accuracy, **NFR** (tỉ lệ lật nhãn so với premise gốc) |
 | Đọc hiểu trắc nghiệm | **ViMMRC / ViMMRC 2.0** | đoạn văn (giữ nguyên câu hỏi + đáp án) | accuracy |
 | Đọc hiểu (song song đa ngữ) | **Belebele** (vie_Latn, + eng_Latn) | đoạn văn | accuracy; so sánh trực tiếp với *Lost in Compression* và đo khoảng cách Việt–Anh |
 | (tuỳ chọn, bản 8 trang) Tóm tắt đa văn bản, đầu vào dài | **VLSP 2022 AbMuSu** | cụm văn bản | ROUGE-1/2/L |
+| *Khám phá* — QA trích xuất | **UIT-ViQuAD 2.0** (validation làm test) | đoạn văn | F1, EM |
+| *Khám phá* — nén ví dụ minh hoạ | **GSM8K-vi** (dịch máy) | 8 ví dụ có lời giải | accuracy; báo cáo riêng nhóm "MT" |
+| *Khám phá* — ngữ cảnh dài | **OneRuler-vi** (`vi_4096`) | văn bản nền ~4.300 token | recall chuỗi |
+
+Ba tác vụ *khám phá* được thêm ngày 04/10/2026 để kiểm tra độ rộng; chúng chỉ báo cáo mô tả, **không** thuộc họ
+Holm của H1/H2 và không tham gia các cổng.
 
 Với mọi tác vụ: chỉ nén **phần ngữ cảnh**; chỉ dẫn, câu hỏi và các lựa chọn giữ nguyên. Dev (chọn α, δ) lấy
 từ tập train/validation, không trùng test.
@@ -323,14 +464,19 @@ từ tập train/validation, không trùng test.
 - **VietNews** có thiên lệch phần mở đầu (Lead-3 là baseline tóm tắt tin tức khó thắng), nên Lead-k/truncation
   có thể rất mạnh ở 1/3 và 1/5. VietNews dùng cho kiểm định non-inferiority của H2 và báo cáo mô tả, không làm
   tác vụ chính của H1.
-- **ViNLI** có **4 nhãn** (entailment / neutral / contradiction / other). Có thể bỏ nhãn "other" để thành NLI 3 lớp
-  chuẩn. Premise chỉ dài một câu, nén còn 1/5 thì chỉ còn vài token. Nếu cổng G2 thiếu cặp có phủ định, dựng thêm
+- **ViNLI** có **4 nhãn** (entailment / neutral / contradiction / other). **Quyết định:** giữ đủ 4 nhãn như bộ dữ
+  liệu gốc; prompt liệt kê cả bốn nhãn và accuracy tính trên 4 lớp. Không bỏ "other" vì NFR đo việc lật nhãn so với
+  premise gốc, và bỏ một lớp sẽ đổi tập cặp được đánh giá giữa các phương pháp. Premise chỉ dài một câu, nén còn 1/5 thì chỉ còn vài token. Nếu cổng G2 thiếu cặp có phủ định, dựng thêm
   bộ kiểm tra phủ định 300–500 mẫu (câu có phủ định lấy từ VietNews + câu hỏi có/không, kiểm tay), hoặc nhúng
   premise vào đoạn văn nguồn để ngữ cảnh dài hơn.
 - **ViMMRC:** loại các bài thơ, hoặc báo cáo riêng.
 
 LLM đích (reader), zero-shot, decoding greedy: **Qwen2.5-7B-Instruct** (đa ngữ, reader chính) và
-**Vistral-7B-Chat** (chuyên tiếng Việt). Bản 8 trang thêm Llama-3.1-8B-Instruct, SeaLLMs-v3-7B và một reader thế
+**Vistral-7B-Chat** (chuyên tiếng Việt). Mọi quyết định trên dev (cổng, `ckpt_check`, π, α, MDE) chỉ dùng reader
+chính (`PRIMARY_READER`) rồi cố định; reader thứ hai chỉ chạy `eval` với `READER=...`. Vistral là repo gated và
+thẻ mô hình dùng system prompt: chạy với `READER_SYSTEM_PROMPT` và kiểm tra template đã render bằng
+`scripts/check_reader_template.py` trước khi đánh giá. Mỗi dòng kết quả báo cáo tỉ lệ câu trả lời không đọc được
+(phải < 2%, `analyze.py` đánh dấu ⚠). Bản 8 trang thêm Llama-3.1-8B-Instruct, SeaLLMs-v3-7B và một reader thế
 hệ mới (Gemma 3, vocab rất lớn, hợp để kiểm tra H3; nếu dùng Qwen3 thì tắt chế độ thinking).
 
 ### 4.2 Phương pháp so sánh
@@ -338,47 +484,89 @@ hệ mới (Gemma 3, vocab rất lớn, hợp để kiểm tra H3; nếu dùng Q
 |---|---|
 | Mốc | không nén; `no_context` (không có ngữ cảnh) |
 | Tầm thường / tất định | truncation (giữ đầu + cuối), **Lead-k** (giữ phần đầu), bỏ từ ngẫu nhiên (cấp từ, 3 seed), bỏ stopword tiếng Việt |
-| Cấp câu | trích câu TF-IDF (theo *Lost in Compression*); bộ chọn câu theo perplexity (như `lacc_sentence`, arm tốt nhất của LACC) |
+| Cấp câu | trích câu TF-IDF (theo *Lost in Compression*); bộ chọn câu theo perplexity `ppl_sent` (điểm câu = surprisal trung bình theo token, giữ câu điểm cao trước) |
 | Chỉ luật ngôn ngữ | pipeline từ vựng (stopword + POS + giữ thực thể tên, theo 2609.13154) chuyển sang tiếng Việt |
 | Dịch rồi nén | chỉ trên Belebele: dùng bản eng_Latn (người dịch) làm bản dịch lý tưởng → LLMLingua-2, không chạy dịch máy (*Lost in Compression* thấy cách này thắng nén bản ngữ ở 3/5 ngôn ngữ) |
-| Đã công bố | Selective Context và LLMLingua (dùng LM đủ mạnh, ví dụ Qwen2.5-1.5B trở lên, để tránh baseline "người rơm"), **LLMLingua-2** (xlm-roberta-large, bản gốc) |
+| Đã công bố | Selective Context (cài lại ở cấp từ: self-information của từ = tổng surprisal các token của từ, chọn theo ngân sách; bản gốc lọc theo ngưỡng phân vị trên cụm từ và cần spaCy tiếng Anh) và LLMLingua (dùng LM đủ mạnh, ví dụ Qwen2.5-1.5B trở lên, để tránh baseline "người rơm"), **LLMLingua-2** (xlm-roberta-large, bản gốc) |
 | Tham chiếu (có câu hỏi) | LongLLMLingua trên ViMMRC/Belebele; dùng câu hỏi nên không đưa vào so sánh chính |
 | **Đối chứng quan trọng** | **LLMLingua-2-vi**: *cùng* đầu ra thầy §3.2, *cùng* XLM-R-large, *cùng* bước chọn, nhưng nhãn và quyết định ở cấp **âm tiết** (như LLMLingua-2 gốc). Chỉ khác đơn vị, nên cô lập được H1 |
-| Đối chứng H1 (2×2) | LLMLingua-2-vi + gộp theo từ lúc suy luận (nhãn âm tiết, quyết định từ); mô hình học nhãn mềm cấp từ nhưng quyết định ở cấp âm tiết (nhãn từ, quyết định âm tiết); thêm LLMLingua-2 gốc + gộp theo từ |
+| Đối chứng H1 (2×2) | LLMLingua-2-vi + gộp logit theo từ rồi sigmoid lúc suy luận (nhãn âm tiết, quyết định từ); mô hình học nhãn mềm cấp từ nhưng quyết định ở cấp âm tiết (nhãn từ, quyết định âm tiết); thêm LLMLingua-2 gốc + cùng phép gộp logit |
 | **Đối chứng tra từ** | p_keep(w) = tỉ lệ thầy giữ loại từ w trên tập train, không dùng ngữ cảnh; cùng bước chọn. Nếu ViWord-C chỉ ngang đối chứng này thì encoder không đóng góp gì |
-| Đối chứng H2 | LLMLingua-2-vi + `force_tokens` = danh sách P, bật `force_reserve_digit` (cơ chế bảo vệ cứng có sẵn trong LLMLingua-2) |
-| Cận trên | đầu ra nén của chính LLM thầy, trên tập con 200–300 mẫu mỗi tác vụ (thầy không khớp ngân sách chính xác, nên báo cáo tỉ lệ nén thực tế) |
+| Đối chứng H2 | `llmlingua2vi_force_s*`: LLMLingua-2-vi + `protect=force` (ngữ nghĩa `force_tokens`, cùng tầng với π); ablation `llmlingua2vi_forcectx_s*` dùng P đã khử nhập nhằng; `llmlingua2_force` chỉ là baseline package chẩn đoán |
+| Cận trên | đầu ra nén của chính LLM thầy, trên tập con 200–300 mẫu mỗi tác vụ (thầy không khớp ngân sách chính xác, nên báo cáo tỉ lệ nén thực tế). Ở cổng G4, `trim=1` cắt đầu ra thầy **từ cuối** theo khoảng trắng cho tới khi vừa ngân sách (không theo điểm, vì thầy không có điểm từng từ); cận trên trên test dùng đầu ra thầy không cắt và báo cáo tỉ lệ nén thực tế |
 | Của ta | ViWord-C (XLM-R-large) × {π: none / cấu hình chọn trên dev} × {α = 0 / α* (bản 8 trang)} |
 
-Mức nén: ngân sách **tính theo token của LLM đích**, bằng 1/2, 1/3, 1/5 độ dài ngữ cảnh gốc. Với các phương
-pháp chỉ nhận tham số `rate` theo tokenizer của chính chúng (LLMLingua, LLMLingua-2), **tìm nhị phân** giá trị
-`rate` để độ dài thật theo tokenizer đích nằm trong ±3% ngân sách. Báo cáo tỉ lệ nén **thực tế** cho mọi phương
-pháp, và đánh dấu các cặp so sánh lệch ngân sách > 5%.
+`stage_eval` hiện thực từng dòng bằng spec cụ thể: `stopword`, `lexical`, `ppl_sent`, LLMLingua theo perplexity
+(`llmlingua:lm=$LM`), LLMLingua-2 package gốc (`llmlingua2`), LLMLingua-2-vi/ViWord-C và
+`random:seed=0|1|2`. `longllmlingua:lm=$LM` chỉ được thêm cho ViMMRC và Belebele vì đây là baseline có câu hỏi.
+Chạy `bash scripts/run_pipeline.sh teacher_test` trước `eval` để sinh cận trên thầy trên 300 mẫu mỗi tác vụ vào
+`results/teacher_test/<stem>.jsonl`; `stage_eval` đọc chúng bằng `precomputed:...,name=teacher_upper` và báo cáo tỉ lệ
+nén thực tế trong một lượt evaluate riêng 300 mẫu/tác vụ, không dùng cận trên này để chọn π.
+
+Mức nén: với mọi phương pháp, `B = round(ratio × n_tokens(context))`, trong đó `n_tokens(context)` được đếm bằng
+tokenizer của reader và chỉ tính phần ngữ cảnh gốc; chỉ dẫn, câu hỏi và lựa chọn không nằm trong B. `translate` cũng
+dùng đúng B này: bản `context_en` chỉ thay đổi đầu vào của compressor, không thay đổi ngân sách chung. Báo cáo
+`n_tokens_compressed / B` cho mọi phương pháp; các cặp so sánh có chênh lệch thực tế > 5% phải được đánh dấu. Với
+các phương pháp chỉ nhận tham số `rate` theo tokenizer của chính chúng (LLMLingua, LLMLingua-2), **tìm nhị phân**
+giá trị `rate` để độ dài thật theo tokenizer đích nằm trong [−3%, 0] của ngân sách: không bao giờ vượt B, cùng giới
+hạn cứng mà `trim_to_budget` áp cho mọi phương pháp dựa trên mặt nạ.
+
+**`ppl_sent` so với `lacc_sentence` của LACC.** Hai bộ chọn câu cùng xếp câu theo điểm trung bình của token (cao
+giữ trước), nhưng khác ba điểm: (1) `lacc_sentence` dùng câu hỏi (perplexity có điều kiện theo câu hỏi kiểu
+LongLLMLingua và trọng số liên quan câu hỏi), còn `ppl_sent` không dùng câu hỏi vì so sánh chính là
+task-agnostic; (2) `lacc_sentence` luôn giữ câu đầu và câu cuối; (3) `lacc_sentence` thêm trọn câu cho tới khi
+**vượt** ngân sách, còn `ppl_sent` không vượt B và lấp phần còn lại bằng phần đầu của câu tốt nhất chưa chọn (nếu
+không, premise ViNLI một câu bị nén thành rỗng). Kết quả 0.760 của LACC ở 8x vì vậy là của một bộ chọn **có câu
+hỏi**; tham chiếu có câu hỏi trong bài này là LongLLMLingua.
 
 ### 4.3 Ablation (bảng chính)
 | Hàng | Nhãn | Quyết định | π | α | kiểm định |
 |---|---|---|---|---|---|
 | LLMLingua-2-vi | âm tiết | âm tiết | none | 0 | — |
-| LLMLingua-2-vi + gộp theo từ | âm tiết | từ | none | 0 | H1 (2×2) |
+| LLMLingua-2-vi + gộp logit theo từ | âm tiết | từ | none | 0 | H1 (2×2) |
 | nhãn từ, quyết định âm tiết | từ (mềm) | âm tiết | none | 0 | H1 (2×2) |
 | ViWord-C, π = none | từ (mềm) | từ | none | 0 | **H1** |
-| LLMLingua-2-vi + `force_tokens` | âm tiết | âm tiết | hard (không khử nhập nhằng) | 0 | đối chứng H2 |
+| LLMLingua-2-vi + `force_tokens` | âm tiết | âm tiết | force (khớp chuỗi P + chữ số, không khử nhập nhằng) | 0 | đối chứng H2 |
 | + bảo vệ π (cấu hình chính) | từ (mềm) | từ | theo quy tắc §2.3 | 0 | **H2** |
 | + tokenizer-aware (bản 8 trang) | từ (mềm) | từ | như hàng H2 | α* | **H3** |
 | + chi phí = số âm tiết (bản 8 trang) | từ (mềm) | từ | như hàng H2 | α* với n_syl | đối chứng H3 |
 
 Kiểm định:
 - Bootstrap ghép cặp **theo cụm** (10k lần), cụm = tài liệu nguồn: premise ViNLI (một premise có nhiều hypothesis),
-  đoạn ViMMRC (một đoạn có nhiều câu hỏi), đoạn Belebele (900 câu hỏi trên 488 đoạn), bài VietNews. **Báo cáo
-  riêng từng tác vụ × reader × tỉ lệ**, không gộp.
+  đoạn ViMMRC (một đoạn có nhiều câu hỏi), đoạn Belebele (900 câu hỏi trên 488 đoạn), bài VietNews. Mỗi lần lấy mẫu
+  lại chọn ID cụm có hoàn lại; toàn bộ dòng trong cụm được giữ và mẫu số mang trọng số bằng kích thước cụm, nên
+  ước lượng vẫn là trung bình theo ví dụ nhưng không giả định các hypothesis/câu hỏi độc lập. **Báo cáo riêng từng
+  tác vụ × reader × tỉ lệ**, không gộp.
 - Test cho phần phân tích dùng đúng định dạng output thật (lỗi gom cụm của LACC lọt qua vì test fixture khác dữ
   liệu thật).
-- **Tính MDE trước khi chạy test** cho H1 và cho kiểm định non-inferiority của H2. Nếu MDE lớn hơn hiệu ứng kỳ
-  vọng, tăng số mẫu trước khi chạy, không phải sau.
-- Holm trong từng họ giả thuyết H1/H2/H3, với reader chính (Qwen2.5-7B); các reader khác là phân tích mô tả.
-- NFR dùng McNemar. Non-inferiority ROUGE-L với lề −0.5 (lý do chọn lề ở §2.3).
-- Seed: một kết luận chỉ được coi là có ý nghĩa khi đúng ở cả 3 seed (hoặc dùng bootstrap phân tầng: lấy mẫu seed
-  rồi lấy mẫu cụm). Bảng chính báo cáo trung bình 3 seed.
+- **Tính MDE trước khi chạy test:** `scripts/mde.py` chạy trên các dòng dev sau khi chọn π, tính H1 theo **đúng
+  tương phản đã đăng ký** `viword − llmlingua2vi` trên ViMMRC dev khả dụng, H2 theo NFR ViNLI và ROUGE-L VietNews.
+  Bootstrap dùng thiết kế chéo seed × cụm như phân tích chính. MDE dev được quy về cỡ test theo
+  MDE_test = MDE_dev · √(số cụm dev / số cụm test); report ghi cả hai, hiệu ứng pilot và SD giữa ba seed vào
+  `results/mde_dev/report.{md,json}`. Lề non-inferiority 0.5 điểm ROUGE-L phải lớn hơn MDE **test** và SD seed;
+  `stage_eval` bị chặn nếu report không PASS, nếu report tính cho lề khác, hoặc tính theo tương phản H1 cũ.
+  Belebele hiện chỉ có split test trong dữ liệu chuẩn hoá, nên không được dùng thay cho dev và report phải đánh dấu
+  task này thiếu coverage MDE.
+- Họ Holm được khai báo bằng `--holm-family NAME:tasks=…,ratios=…,reader=primary,test=metric|nfr`; mỗi lượt
+  `analyze.py` kiểm định **một** giả thuyết (`--hypothesis H1|H2`) và chỉ hiệu chỉnh trong họ của giả thuyết đó;
+  mọi p-value khác in thô. H1: `{ViMMRC, Belebele} × {1/2, 1/3, 1/5}`, test=metric. H2:
+  `{ViNLI} × {1/2, 1/3, 1/5}`, test=nfr. Các reader khác là phân tích mô tả.
+- NFR: kiểm định chính là bootstrap ghép cặp **một phía** trên hiệu cờ lật nhãn (target − đối chứng), lấy mẫu lại
+  theo premise (và theo seed khi gộp seed), vì nhiều hypothesis dùng chung một premise và ba seed đánh giá cùng một
+  ví dụ. McNemar chính xác giả định các cặp độc lập nên chỉ được in **mô tả** theo từng seed (một phía). Đây là
+  thay đổi so với "NFR dùng McNemar" ban đầu. Non-inferiority ROUGE-L với lề −0.5 (lý do chọn lề ở §2.3).
+- p-value một phía của mọi phép so ghép cặp là p-value bootstrap percentile: tỉ lệ trung bình bootstrap của hiệu
+  ≤ 0 (với NFR: ≥ 0, vì giả thuyết là target lật **ít** hơn). Khoảng tin cậy là phân vị 2.5–97.5%.
+- H1, dự đoán cơ chế: `analyze.py --cbr-regression llmlingua2vi` hồi quy (OLS) mức tăng theo từng ví dụ
+  `viword − llmlingua2vi` lên CBR của chính bản nén LLMLingua-2-vi ở ví dụ đó (trường `cbr` do `evaluate.py` ghi),
+  CI bằng bootstrap theo cụm; báo cáo mô tả, không vào họ Holm.
+- `stage_analyze` chạy một lượt H2 riêng với `--target viword_pi --reference viword llmlingua2vi_force
+  llmlingua2vi_forcectx --hypothesis H2` sau khi chuẩn hoá các hậu tố seed; lượt này xuất kiểm định NFR (Holm trong
+  họ H2) và non-inferiority ROUGE-L cho từng đối chứng.
+- Seed: bảng chính gộp đúng ba seed bằng trung bình và độ lệch chuẩn giữa các seed. Kiểm định dùng bootstrap theo
+  **thiết kế chéo seed × cụm**: mỗi lần lấy lại seed có hoàn lại và **một** bộ ID cụm có hoàn lại, áp chung cho mọi seed
+  được chọn (cùng một cụm xuất hiện ở cả ba seed). Lấy cụm độc lập trong từng seed làm SE thấp đi khoảng 40% trên
+  dữ liệu mô phỏng; lỗi này đã được sửa ngày 12/10/2026. Thiếu một seed thì phân tích dừng.
 
 ### 4.4 Phân tích phụ (lấp chỗ trống cho bài dài)
 - CBR, RR và tỉ lệ giữ phủ định của mọi phương pháp, kể cả LLM thầy.
@@ -387,7 +575,8 @@ Kiểm định:
 - Ví dụ định tính "cắt đôi từ làm đổi nghĩa" (*học sinh → học*, *không đồng ý → đồng ý*).
 - Ảnh hưởng của lỗi tách từ: thay RDRSegmenter bằng pyvi và xem độ nhạy.
 - Độ dài đầu ra của reader (theo CAVEWOMAN): nén có làm model trả lời dài hơn không.
-- Độ trễ nén (ms/văn bản) so với LLMLingua (cần LM 7B) và LLMLingua-2.
+- Độ trễ nén (ms/văn bản) so với LLMLingua (cần LM 7B) và LLMLingua-2: mỗi dòng nén ghi `compress_ms`
+  (thời gian của riêng lời gọi `compress`, không gồm tải mô hình).
 
 ## 5. Kế hoạch & tài nguyên
 
@@ -400,7 +589,7 @@ Kiểm định:
 
 **Tính toán:**
 - Encoder < 1 GPU-giờ mỗi lần chạy.
-- LLM thầy 72B: 10k đoạn × 2 mức nén, cỡ 10M token sinh → vài giờ với vLLM.
+- LLM thầy iCOMM 27B qua endpoint vLLM: 10k đoạn × 2 mức nén, cỡ 10M token sinh → vài giờ, tuỳ tải server.
 - Đánh giá: ~35 biến thể (tính cả 3 seed cho các mô hình huấn luyện và các ô 2×2) × 4 tác vụ × 3 tỉ lệ × ~1000
   mẫu × 2 reader ≈ 0.8–1 triệu lượt sinh (bản 8 trang: nhân thêm theo số reader). LLMLingua và Selective
   Context cần thêm một LM để nén.
@@ -410,7 +599,8 @@ Kiểm định:
 cụm, kiểm tra rò rỉ, các arm mốc) được viết lại gọn trong repo này, không import từ `../vncompress`:
 ```
 viword/
-  segment.py      # tách từ (VnCoreNLP/underthesea/pyvi), mặt nạ âm tiết, render, căn chỉnh
+  segment.py      # tách từ VnCoreNLP; underthesea/pyvi chỉ cho độ nhạy, mặt nạ âm tiết, render, căn chỉnh
+  segment_meta.py # sidecar provenance của cache tách từ (bộ tách, SHA-256, xác minh lại bằng VnCoreNLP)
   protect.py      # tập P theo (từ, POS, ngữ cảnh) + luật khử nhập nhằng
   select.py       # tham lam s/c_T^α + bước lấp, knapsack DP chính xác, cắt theo độ dài thật
   model.py        # encoder chấm điểm theo âm tiết, cửa sổ trượt, đối chứng tra từ
@@ -420,8 +610,12 @@ viword/
   distill.py      # prompt thầy, nhãn âm tiết + nhãn mềm cấp từ, kiểm tra rò rỉ
   train.py        # huấn luyện XLM-R
   diagnose.py     # CBR (+ mốc ngẫu nhiên), RR, retention, fertility, CV_T (§4.0)
-  data.py, eval.py, stats.py   # dữ liệu, reader vLLM + metric, bootstrap theo cụm / Holm / McNemar / MDE
-scripts/          # segment_data, distill, train, diagnose, evaluate, analyze
+  data.py, eval.py, stats.py   # dữ liệu, reader vLLM + metric, bootstrap seed × cụm / Holm / kiểm định NFR / MDE
+scripts/          # prepare_data, leak_filter, segment_data, check_segmented, verify_segmentation,
+                  # teacher_compress, review_teacher, distill, train, checkpoint_check, diagnose, compare_llmlingua2,
+                  # gate_report, gate_eval, make_annotation_sheets, evaluate_protect, evaluate_probe, select_pi,
+                  # select_alpha, mde, greedy_gap, check_reader_template, evaluate, bertscore, analyze;
+                  # run_pipeline.sh nối tất cả
 tests/            # test CPU
 ```
 
