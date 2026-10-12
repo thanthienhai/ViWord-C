@@ -166,7 +166,15 @@ def score(example: Example, prediction: str) -> dict[str, float]:
 
 # ---------------------------------------------------------------------------- reader
 
+def chat_messages(prompt: str, system_prompt: str | None = None) -> list[dict]:
+    """One zero-shot turn. Some readers expect a system prompt (Vistral's model card uses
+    one); the same `system_prompt` is then used for every method and ratio of that reader."""
+    messages = [{"role": "system", "content": system_prompt}] if system_prompt else []
+    return messages + [{"role": "user", "content": prompt}]
+
+
 class HFReader:
+    system_prompt: str | None = None
     """Fallback reader with plain transformers, one prompt at a time (slow; for small models,
     smoke tests, and machines where vLLM is unavailable, e.g. Windows)."""
 
@@ -183,7 +191,7 @@ class HFReader:
     def generate(self, prompts: list[str], max_new_tokens: int) -> list[str]:
         outputs = []
         for p in prompts:
-            ids = self.tokenizer.apply_chat_template([{"role": "user", "content": p}], add_generation_prompt=True,
+            ids = self.tokenizer.apply_chat_template(chat_messages(p, self.system_prompt), add_generation_prompt=True,
                                                      enable_thinking=False, return_tensors="pt",
                                                      return_dict=True).to(self.device)
             with self.torch.no_grad():
@@ -193,6 +201,7 @@ class HFReader:
 
 
 class APIReader:
+    system_prompt: str | None = None
     """A reader served behind an OpenAI-compatible chat API (e.g. `vllm serve`), queried in
     parallel. `tokenizer` is the Hugging Face id of the reader's tokenizer, used for budgets.
     Do not use the teacher model as a reader: the teacher would grade its own compressions."""
@@ -208,7 +217,7 @@ class APIReader:
 
     def _one(self, prompt: str, max_new_tokens: int) -> str:
         response = self.client.chat.completions.create(
-            model=self.name, messages=[{"role": "user", "content": prompt}], temperature=0.0,
+            model=self.name, messages=chat_messages(prompt, self.system_prompt), temperature=0.0,
             max_tokens=max_new_tokens, extra_body={"chat_template_kwargs": {"enable_thinking": False}})
         return re.sub(r"<think>.*?</think>", "", response.choices[0].message.content or "", flags=re.S)
 
@@ -222,6 +231,7 @@ class APIReader:
 
 
 class VLLMReader:
+    system_prompt: str | None = None
     """A target LLM served with vLLM (offline). Thinking mode is always disabled."""
 
     def __init__(self, model: str, max_model_len: int = 8192, **kwargs):
@@ -236,7 +246,7 @@ class VLLMReader:
     def generate(self, prompts: list[str], max_new_tokens: int) -> list[str]:
         from vllm import SamplingParams
 
-        messages = [[{"role": "user", "content": p}] for p in prompts]
+        messages = [chat_messages(p, self.system_prompt) for p in prompts]
         params = SamplingParams(temperature=0.0, max_tokens=max_new_tokens)
         outputs = self.llm.chat(messages, params, chat_template_kwargs={"enable_thinking": False})
         return [o.outputs[0].text for o in outputs]

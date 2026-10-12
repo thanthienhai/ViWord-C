@@ -116,3 +116,22 @@ def test_greedy_gap_is_at_most_one_and_exact_on_easy_cases():
     # score-only greedy takes the big item and stops; DP takes the two small ones
     greedy, exact = objective_gap([0.9, 0.6, 0.6], [3, 2, 2], 4, alpha=0.0)
     assert greedy == 0.9 and exact == 1.2 and greedy <= exact
+
+
+def test_bertscore_feeds_phobert_word_segmented_text():
+    from scripts.bertscore import add_bertscore
+
+    class Seg:
+        def segment(self, text):
+            return [[W("học sinh"), W("đi", "V")]] if text else []
+
+    seen = {}
+
+    def score_fn(candidates, refs):
+        seen["c"], seen["r"] = candidates, refs
+        return [0.7] * len(candidates)
+
+    rows = [{"task": "vietnews", "id": "a", "raw_output": "học sinh đi"}, {"task": "vinli", "id": "b"}]
+    out = add_bertscore(rows, {"a": "học sinh đi"}, Seg(), score_fn)
+    assert seen["c"] == ["học_sinh đi"] and seen["r"] == ["học_sinh đi"]
+    assert out[0]["bertscore_f1"] == 0.7 and "bertscore_f1" not in out[1]

@@ -17,7 +17,7 @@ seg = ["py_vncorenlp", "underthesea", "pyvi"]
 # Encoder training and scoring.
 model = ["torch>=2.1", "transformers>=4.40"]
 # Readers (target LLMs).
-eval = ["vllm>=0.6", "datasets"]
+eval = ["vllm>=0.6", "datasets", "bert_score>=0.3.12"]
 # Published baselines.
 baselines = ["llmlingua>=0.2.2"]
 # Teacher LLM through an OpenAI-compatible API (vLLM server or OpenAI).
