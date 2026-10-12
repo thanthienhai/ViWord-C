@@ -74,6 +74,7 @@ step_check_data() {
     [ -s "$f" ] || { echo "missing $f (set HF_DATA_REPO, see the top of this script)"; exit 1; }
     echo "$(wc -l < "$f") $f"
   done
+  python scripts/check_segmented.py --directory data/segmented --segmenter vncorenlp
 }
 
 step_teacher_gate() {

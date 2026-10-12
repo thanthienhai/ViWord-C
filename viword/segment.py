@@ -186,7 +186,9 @@ class VnCoreNLPSegmenter:
     def segment(self, text: str) -> Document:
         annotated = self.model.annotate_text(normalize(text))
         return [
-            [Word(t["wordForm"].replace("_", " "), t["posTag"], t["nerLabel"]) for t in sentence]
+            # VnCoreNLP rewrites new-style tone placement to the old style ("hòa" -> "hoà");
+            # normalize its word forms back so the words match the normalized source text.
+            [Word(normalize(t["wordForm"].replace("_", " ")), t["posTag"], t["nerLabel"]) for t in sentence]
             for _, sentence in sorted(annotated.items())
         ]
 

@@ -4,9 +4,13 @@ Usage:
   python scripts/segment_data.py --input data/tasks/vinli_test.jsonl --field premise \
       --output data/segmented/vinli_test.jsonl
   python scripts/segment_data.py --input data/distill/paragraphs_clean.jsonl --field text \
-      --output data/segmented/paragraphs_clean.jsonl --segmenter underthesea --workers 16
+      --output data/segmented/paragraphs_clean.jsonl --segmenter vncorenlp --workers 16
 
-Output lines: {"id": ..., "doc": [[[word, pos, ner], ...], ...]}
+Output lines: {"id": ..., "doc": [[[word, pos, ner], ...], ...]}.  A
+``.jsonl.meta.json`` sidecar records the segmenter, annotators, source field and
+the output SHA-256.  ``underthesea`` and ``pyvi`` remain available for the
+explicit segmenter-sensitivity analysis, but are not valid inputs to the main
+pipeline.
 Identical texts are segmented once (ViNLI has ~8 hypotheses per premise). --workers > 1
 runs one segmenter per process (useful for underthesea/pyvi).
 """
@@ -17,6 +21,7 @@ from tqdm import tqdm
 
 from viword.data import read_jsonl, write_jsonl
 from viword.segment import doc_to_json, get_segmenter
+from viword.segment_meta import build_metadata, write_metadata
 
 _segmenter = None
 
@@ -49,7 +54,17 @@ def main():
         docs = [_segment(t) for t in tqdm(texts)]
     by_text = dict(zip(texts, docs))
     write_jsonl(args.output, [{"id": r["id"], "doc": by_text[r[args.field]]} for r in rows])
+    metadata = build_metadata(
+        args.output,
+        segmenter=args.segmenter,
+        input_path=args.input,
+        field=args.field,
+        rows=len(rows),
+        unique_texts=len(texts),
+    )
+    sidecar = write_metadata(args.output, metadata)
     print(f"wrote {len(rows)} documents ({len(texts)} unique texts) to {args.output}")
+    print(f"wrote segmentation metadata to {sidecar}")
 
 
 if __name__ == "__main__":

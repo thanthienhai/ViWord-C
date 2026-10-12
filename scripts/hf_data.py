@@ -21,7 +21,7 @@ def push(repo: str, message: str) -> None:
     for local, remote in FOLDERS.items():
         print(f"upload {local} -> {repo}/{remote}")
         api.upload_folder(repo_id=repo, repo_type="dataset", folder_path=local, path_in_repo=remote,
-                          allow_patterns=["*.jsonl", "*.json"], ignore_patterns=["smoke_*"],
+                          allow_patterns=["*.jsonl", "*.json", "*.meta.json"], ignore_patterns=["smoke_*"],
                           commit_message=f"{message}: {remote}")
 
 
