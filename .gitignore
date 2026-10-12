@@ -221,6 +221,9 @@ __marimo__/
 data/*
 !data/README.md
 !data/SHA256SUMS
+# blind annotation sheets (D4/G6); the detector-prefilled labels are not versioned
+!data/annot/
+data/annot/invalid_detector_prefilled/
 models/
 runs/
 results/eval/
