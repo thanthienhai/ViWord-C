@@ -8,12 +8,23 @@ Spec syntax: `name` or `name:key=value,key=value`. Examples:
   llmlingua2 | llmlingua2_force | llmlingua:lm=Qwen/Qwen2.5-1.5B | longllmlingua:lm=...
   translate:inner=llmlingua2                (Belebele only: compress the English passage)
   scored:model=runs/viword_s0,unit=word,protect=soft,delta=0.2,alpha=0,name=viword
-  lexprior:train=data/distill/train.jsonl
+  scored:model=runs/llmlingua2vi_s0,unit=syllable,protect=force,tiers=T1+T2,name=...
+  lexprior:train=data/distill/distilled.jsonl,exclude=runs/viword_s0/dev_ids.jsonl
   precomputed:path=results/teacher_dev/vinli_dev.jsonl,trim=1,name=teacher
 
-`scored` covers ViWord-C, LLMLingua-2-vi and the 2×2 cells; with
+`scored` covers ViWord-C, LLMLingua-2-vi and the 2×2 cells. Every `scored` arm uses the
+shared Vietnamese `render()` after selecting its syllable mask. For every `unit=word` arm,
+it pools logits by word and applies sigmoid after pooling; with
 model=microsoft/llmlingua-2-xlm-roberta-large-meetingbank it scores with the published
 LLMLingua-2 weights (e.g. unit=word for "LLMLingua-2 + word pooling").
+The package baseline `llmlingua2`, `translate`, and `precomputed` are text-only/external
+outputs and are not H1 2×2 cells.
+`llmlingua2_force` is the package-level P diagnostic; the preregistered H2 row is the
+`scored:...,unit=syllable,protect=force` arm named `llmlingua2vi_force_*` in the pipeline:
+`force_tokens` semantics, i.e. plain string matching of the P word list (multi-syllable
+entries matched as syllable sequences) plus digits, without POS/NER disambiguation
+(DATN §3.4). `protect=force_ctx` uses the disambiguated, NER-aware P at syllable level;
+it is an extra ablation that separates "word unit" from "disambiguation" in H2.
 """
 from __future__ import annotations
 
@@ -34,6 +45,9 @@ class TranslateThenCompress:
     def compress(self, context: Context, budget, counter):
         if not context.text_en:
             raise ValueError("translate-then-compress needs the parallel English context")
+        # `budget` was computed from the reader-facing source context. The parallel
+        # English text changes only what the inner compressor sees; it must not get a
+        # separate budget and thereby gain an unfair length allowance.
         return self.inner.compress(Context(text=context.text_en), budget, counter)
 
 
@@ -63,8 +77,7 @@ def build_compressor(spec: str, cache: dict | None = None):
     if name == "llmlingua2":
         return B.LLMLinguaOfficial("llmlingua2")
     if name == "llmlingua2_force":
-        from .protect import TIER_OF_WORD
-        return B.LLMLinguaOfficial("llmlingua2", force_tokens=sorted(w for w in TIER_OF_WORD if " " not in w))
+        return B.LLMLinguaOfficial("llmlingua2", force_from_context=True)
     if name in {"llmlingua", "longllmlingua"}:
         return B.LLMLinguaOfficial(name, lm_name=a.get("lm", "Qwen/Qwen2.5-1.5B"))
     if name == "translate":
@@ -81,7 +94,13 @@ def build_compressor(spec: str, cache: dict | None = None):
         else:
             from .data import read_jsonl
             from .model import LexicalPriorScorer
-            scorer = LexicalPriorScorer.fit(read_jsonl(a["train"]))
+            records = read_jsonl(a["train"])
+            if "exclude" in a:  # e.g. runs/viword_s0/dev_ids.jsonl: fit on the encoder's train split only
+                held_out = {r["id"] for r in read_jsonl(a["exclude"])}
+                records = [r for r in records if r["id"] not in held_out]
+                if not records:
+                    raise ValueError(f"lexprior: no training records left after excluding {a['exclude']}")
+            scorer = LexicalPriorScorer.fit(records)
         config = SelectionConfig(
             unit=a.get("unit", "word"),
             protect=a.get("protect", "none"),

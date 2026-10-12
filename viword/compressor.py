@@ -6,6 +6,10 @@
 per-syllable keep-logits (from any scorer) into a compressed text; it covers ViWord-C, the
 LLMLingua-2-vi control, all cells of the 2×2 design (DATN §2.3), and the lexical-prior
 control, which differ only in their scorer and `SelectionConfig`.
+The `protect=force` arm is the H2 control of DATN §3.4: `force_tokens` semantics, i.e. the
+P word list matched as plain syllable strings plus digits, as a hard priority at syllable
+level, without disambiguation or NER. `protect=force_ctx` is an extra ablation that uses
+the disambiguated, NER-aware P at syllable level instead.
 """
 from __future__ import annotations
 
@@ -14,7 +18,8 @@ from dataclasses import dataclass
 import numpy as np
 
 from .model import pool_to_words
-from .protect import naive_syllable_protection, protection_tiers
+from .protect import (force_syllable_mask, naive_syllable_protection, protection_tiers,
+                      string_force_syllable_mask)
 from .segment import Document, Word, expand_word_mask, flatten, render, syllables_of
 from .select import TokenCounter, exact_select, greedy_select, trim_to_budget
 
@@ -32,7 +37,7 @@ class Context:
 @dataclass
 class SelectionConfig:
     unit: str = "word"  # decision unit: "word" or "syllable"
-    protect: str = "none"  # "none", "soft", "hard"; syllable unit uses naive force_tokens
+    protect: str = "none"  # "none", "soft", "hard", "force" (string P), "force_ctx" (contextual P)
     delta: float = 0.2  # soft protection bonus
     tiers: tuple[str, ...] = ("T1", "T2", "T3")
     alpha: float = 0.0  # cost exponent (H3)
@@ -83,12 +88,17 @@ class ScoredCompressor:
             protected = [t in cfg.tiers for t in protection_tiers(words)]
         else:
             scores = sigmoid(logits)
-            protected = [naive_syllable_protection(s) for s in syllables_of(words)]
+            if cfg.protect == "force":
+                protected = string_force_syllable_mask(words, cfg.tiers)
+            elif cfg.protect == "force_ctx":
+                protected = force_syllable_mask(words, cfg.tiers)
+            else:
+                protected = [naive_syllable_protection(s) for s in syllables_of(words)]
 
         scores, priority = list(scores), None
         if cfg.protect == "soft":
             scores = [s + cfg.delta * p for s, p in zip(scores, protected)]
-        elif cfg.protect == "hard":
+        elif cfg.protect in {"hard", "force", "force_ctx"}:
             priority = [int(p) for p in protected]
         return select_units(words, scores, budget, counter, unit=cfg.unit, priority=priority,
                             alpha=cfg.alpha, cost=cfg.cost, exact=cfg.exact)

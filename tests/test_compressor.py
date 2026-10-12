@@ -1,10 +1,11 @@
 import numpy as np
 from conftest import W
 
+import viword.compressor as compressor_module
 from viword.baselines import LeadK, NegationProbe, Precomputed, TfidfSentences, Truncation
 from viword.compressor import Context, ScoredCompressor, SelectionConfig
 from viword.model import make_windows, pool_to_words
-from viword.segment import syllables_of
+from viword.segment import render_all, syllables_of
 from viword.select import TokenCounter
 
 
@@ -35,12 +36,54 @@ def test_word_unit_never_breaks_words(sentence, tokenizer):
     assert word.compress(ctx, 3, counter) == "không đi học"
 
 
+def test_h1_scored_cells_use_the_shared_renderer(monkeypatch, sentence, tokenizer):
+    calls = []
+    original_render = compressor_module.render
+
+    def spy(words, mask):
+        calls.append(tuple(mask))
+        return original_render(words, mask)
+
+    monkeypatch.setattr(compressor_module, "render", spy)
+    ctx = context_of(sentence)
+    logits = [10.0] * len(syllables_of(sentence))
+    counter = TokenCounter(tokenizer)
+    for unit in ("syllable", "word"):
+        out = ScoredCompressor(FixedScorer(logits), SelectionConfig(unit=unit), "h1").compress(
+            ctx, 100, counter
+        )
+        assert out == render_all(sentence)
+    assert len(calls) >= 2
+
+
 def test_hard_protection_keeps_negation(sentence, tokenizer):
     logits = [2.0, 2.0, -5.0, 2.0, 2.0, 2.0, -5.0, -5.0, -5.0]  # "không" has a low score
     counter = TokenCounter(tokenizer)
     config = SelectionConfig(unit="word", protect="hard", tiers=("T1",))
     out = ScoredCompressor(FixedScorer(logits), config, "w").compress(context_of(sentence), 4, counter)
     assert "không" in out.split()
+
+
+def test_force_ctx_protection_uses_contextual_p_for_phrases_and_ner(tokenizer):
+    words = [W("có thể", "V"), W("Hà Nội", "Np", "B-LOC"), W("thường", "R"), W(".", "CH")]
+    logits = [-5.0] * 5  # force protection, not the learned score, decides the first two words
+    config = SelectionConfig(unit="syllable", protect="force_ctx")
+    out = ScoredCompressor(FixedScorer(logits), config, "force").compress(
+        context_of(words), 4, TokenCounter(tokenizer)
+    )
+    assert out == "có thể Hà Nội"
+
+
+def test_force_protection_is_plain_string_matching(tokenizer):
+    # force_tokens has no NER and no disambiguation: "không" inside "không khí" is forced,
+    # the entity "Hà Nội" is not, and the multi-syllable entry "có thể" is matched.
+    words = [W("không khí", "N"), W("Hà Nội", "Np", "B-LOC"), W("có thể", "V"), W(".", "CH")]
+    logits = [-5.0] * 7
+    config = SelectionConfig(unit="syllable", protect="force")
+    out = ScoredCompressor(FixedScorer(logits), config, "force").compress(
+        context_of(words), 3, TokenCounter(tokenizer)
+    )
+    assert out == "không có thể"
 
 
 def test_lead_and_truncation(sentence, tokenizer):

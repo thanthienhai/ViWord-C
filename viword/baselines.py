@@ -1,7 +1,9 @@
 """Baselines (DATN §4.2). All follow the `compress(context, budget, counter) -> str` interface.
 
-Rule-based baselines assign a score per word and reuse `select_units`, so every system is
-cut to the same target-token budget with the same rendering.
+Rule-based baselines assign a score per word and reuse `select_units`, so every
+mask-based system is cut to the same target-token budget with the same rendering.
+`LLMLinguaOfficial` uses the package's own text output, while `Precomputed` returns an
+external compression; both are deliberately outside the H1 2×2 mask comparison.
 """
 from __future__ import annotations
 
@@ -11,7 +13,7 @@ from collections import Counter
 from importlib import resources
 
 from .compressor import Context, select_units
-from .protect import is_negation
+from .protect import TIERS, force_tokens_for_context, is_negation
 from .segment import flatten, render, render_all
 from .select import TokenCounter, greedy_select
 
@@ -269,16 +271,25 @@ def _search_rate(compress_at, budget: int, counter: TokenCounter, tolerance: flo
 
 
 class LLMLinguaOfficial:
-    """Published LLMLingua / LLMLingua-2 / LongLLMLingua through the `llmlingua` package."""
+    """Published LLMLingua / LLMLingua-2 / LongLLMLingua through the package.
+
+    ``force_from_context`` is the package-level control: it builds the exact
+    contextual P list from VnCoreNLP words for every example, including phrases,
+    numbers and NER spans.
+    """
 
     LLMLINGUA2 = "microsoft/llmlingua-2-xlm-roberta-large-meetingbank"
 
     def __init__(self, version: str = "llmlingua2", lm_name: str = "Qwen/Qwen2.5-1.5B",
-                 force_tokens: list[str] | None = None, device: str = "cuda"):
+                 force_tokens: list[str] | None = None, force_from_context: bool = False,
+                 force_tiers: tuple[str, ...] = TIERS, device: str = "cuda"):
         from llmlingua import PromptCompressor
 
-        self.version, self.force_tokens = version, force_tokens or []
-        self.name = version + ("_force" if force_tokens else "")
+        self.version = version
+        self.force_tokens = force_tokens or []
+        self.force_from_context = force_from_context
+        self.force_tiers = force_tiers
+        self.name = version + ("_force" if self.force_tokens or force_from_context else "")
         if version == "llmlingua2":
             self.pc = PromptCompressor(model_name=self.LLMLINGUA2, use_llmlingua2=True, device_map=device)
         else:  # "llmlingua" or "longllmlingua": perplexity of a small causal LM
@@ -286,8 +297,13 @@ class LLMLinguaOfficial:
 
     def _at_rate(self, context: Context, rate: float) -> str:
         if self.version == "llmlingua2":
-            out = self.pc.compress_prompt(context.text, rate=rate, force_tokens=self.force_tokens,
-                                          force_reserve_digit=bool(self.force_tokens))
+            force_tokens = self.force_tokens
+            if self.force_from_context:
+                if context.doc is None:
+                    raise ValueError("contextual force_tokens requires the segmented document")
+                force_tokens = force_tokens_for_context(flatten(context.doc), self.force_tiers)
+            out = self.pc.compress_prompt(context.text, rate=rate, force_tokens=force_tokens,
+                                          force_reserve_digit=bool(force_tokens))
         elif self.version == "longllmlingua":
             out = self.pc.compress_prompt([context.text], question=context.question or "", rate=rate,
                                           condition_in_question="after_condition",
