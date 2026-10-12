@@ -1,9 +1,12 @@
 import math
 import random
+import unicodedata
+from collections import Counter
 
 from conftest import W
 
-from viword.diagnose import cbr, cbr_counts, chance_cbr, retention, retention_counts, spearman, word_type
+from viword.diagnose import (cbr, cbr_counts, chance_cbr, chance_cbr_distribution, retention,
+                             recovery_rate, retention_counts, spearman, word_type)
 
 
 def test_cbr_counts_partial_and_full(sentence):
@@ -31,6 +34,46 @@ def test_chance_cbr_formula_and_simulation():
     assert abs(partial / survived - chance_cbr(0.2)) < 0.01
 
 
+def test_chance_cbr_uses_actual_multi_syllable_length_mix():
+    words = [W("một hai"), W("một hai ba"), W("một hai ba bốn")]
+    lengths = [2, 3, 4]
+    expected = chance_cbr_distribution(0.2, lengths)
+    assert not math.isclose(expected, chance_cbr(0.2))
+
+    rng, counts = random.Random(1), Counter()
+    for _ in range(100_000):
+        mask = [rng.random() < 0.2 for n in lengths for _ in range(n)]
+        counts += cbr_counts(words, mask)
+    assert abs(cbr(counts)["all"] - expected) < 0.01
+
+
+class _TwoPieceTokenizer:
+    mask_token = "<mask>"
+
+    def encode(self, text, add_special_tokens=False):
+        return ["ha", "i"] if text == "hai" else [text]
+
+    def convert_tokens_to_string(self, tokens):
+        return "".join(tokens)
+
+
+class _TwoPieceMLM:
+    tokenizer = _TwoPieceTokenizer()
+
+    def __init__(self):
+        self.inputs = []
+
+    def __call__(self, text, top_k=1):
+        self.inputs.append(text)
+        return [[{"token_str": "ha"}], [{"token_str": "i"}]]
+
+
+def test_recovery_rate_uses_one_mask_per_subword():
+    mlm = _TwoPieceMLM()
+    assert recovery_rate([W("một hai")], [True, False], mlm) == 1.0
+    assert mlm.inputs == ["một <mask> <mask>"]
+
+
 def test_word_type():
     assert word_type(W("Hà Nội", "Np", "B-LOC")) == "name"
     assert word_type(W("sạch sẽ", "A")) == "reduplicative"
@@ -48,3 +91,26 @@ def test_retention_by_tier(sentence):
 def test_spearman():
     assert math.isclose(spearman([1, 2, 3, 4], [10, 20, 30, 40]), 1.0)
     assert math.isclose(spearman([1, 2, 3, 4], [4, 3, 2, 1]), -1.0)
+
+
+class _OnePieceMLM:
+    """Predicts the NFC form of a syllable that is stored in NFD in the document."""
+
+    class tokenizer:
+        mask_token = "<mask>"
+
+        @staticmethod
+        def encode(text, add_special_tokens=False):
+            return [text]
+
+        @staticmethod
+        def convert_tokens_to_string(tokens):
+            return "".join(tokens)
+
+    def __call__(self, text, top_k=1):
+        return [{"token_str": unicodedata.normalize("NFC", "Hóa")}]
+
+
+def test_recovery_rate_compares_unicode_normalized_forms():
+    nfd = unicodedata.normalize("NFD", "Thanh Hóa")
+    assert recovery_rate([W(nfd)], [True, False], _OnePieceMLM()) == 1.0

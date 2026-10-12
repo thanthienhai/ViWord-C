@@ -10,7 +10,29 @@ from collections import Counter
 import numpy as np
 
 from .protect import TIERS, is_negation, protection_tiers
-from .segment import Word, syllables_of
+from .segment import Word, normalize, syllables_of
+
+# ---------------------------------------------------------------------------- compressor families
+
+# DATN §1/§4.0 reconcile Lost in Compression with LACC by the source of supervision, so
+# Table 1 is reported per family rather than as one list.
+FAMILY_ORDER = ("learned, English labels", "learned, Vietnamese labels", "perplexity / LM",
+                "deterministic", "other")
+
+
+def compressor_family(name: str) -> str:
+    """Family of a diagnose/evaluate method name (see the run_pipeline.sh specs)."""
+    if name.startswith(("llmlingua2vi", "viword", "lexprior")):
+        return "learned, Vietnamese labels"
+    if name.startswith("llmlingua2") or name.startswith("translate_llmlingua2"):
+        return "learned, English labels"
+    if name.startswith(("llmlingua", "longllmlingua", "selective_context", "ppl_sent")):
+        return "perplexity / LM"
+    if name.startswith(("random", "lead", "truncation", "stopword", "lexical", "tfidf_sent",
+                        "probe_negation")):
+        return "deterministic"
+    return "other"
+
 
 # ---------------------------------------------------------------------------- P1: broken words
 
@@ -80,14 +102,75 @@ def chance_cbr(keep_rate: float, n_syllables: int = 2) -> float:
     return (1 - r ** n - (1 - r) ** n) / (1 - (1 - r) ** n)
 
 
+def chance_cbr_distribution(keep_rate: float, syllable_lengths) -> float:
+    """Expected CBR for independent retention over the observed word lengths.
+
+    CBR is conditioned on a multi-syllable word retaining at least one syllable,
+    so numerator and denominator are aggregated before taking their ratio.
+    """
+    lengths = [int(n) for n in syllable_lengths if int(n) > 1]
+    r = keep_rate
+    if not lengths or not 0 < r < 1:
+        return float("nan")
+    partial = sum(1 - r ** n - (1 - r) ** n for n in lengths)
+    survived = sum(1 - (1 - r) ** n for n in lengths)
+    return partial / survived if survived else float("nan")
+
+
+def _subword_count(tokenizer, text: str) -> int:
+    """Return the number of non-special tokenizer pieces needed for *text*."""
+    try:
+        pieces = tokenizer.encode(text, add_special_tokens=False)
+        return max(1, len(pieces))
+    except (AttributeError, TypeError, ValueError):
+        pieces = tokenizer.tokenize(text)
+        return max(1, len(pieces))
+
+
+def _top1_predictions(raw, n_masks: int) -> list[dict]:
+    """Normalize transformers' single- and multi-mask fill-mask outputs."""
+    if n_masks == 0:
+        return []
+    if isinstance(raw, dict):
+        return [raw]
+    if not isinstance(raw, list):
+        return []
+    if n_masks == 1:
+        if raw and isinstance(raw[0], dict):
+            return [raw[0]]
+        if raw and isinstance(raw[0], list) and raw[0] and isinstance(raw[0][0], dict):
+            return [raw[0][0]]
+        return []
+    result = []
+    for group in raw:
+        if isinstance(group, dict):
+            result.append(group)
+        elif isinstance(group, list) and group and isinstance(group[0], dict):
+            result.append(group[0])
+    return result[:n_masks]
+
+
+def _decode_prediction(tokenizer, token_strs: list[str]) -> str:
+    """Decode top-1 token pieces while supporting lightweight test tokenizers."""
+    if hasattr(tokenizer, "convert_tokens_to_string"):
+        text = tokenizer.convert_tokens_to_string(token_strs)
+    else:
+        text = "".join(token_strs).replace("▁", " ")
+    # A tokenizer may expose a SentencePiece boundary as whitespace for each
+    # independently masked position. The target is one Vietnamese syllable,
+    # so those synthetic boundaries must not make a correct subword sequence fail.
+    return "".join(text.strip().lower().split())
+
+
 def recovery_rate(words: list[Word], syllable_mask: list[bool], mlm, max_words: int = 50,
                   window: int = 100) -> float:
     """RR (DATN §2.2): share of broken words whose missing syllables a masked LM restores.
 
-    For each broken word, the missing syllables are replaced by mask tokens inside the
-    compressed context (±`window` syllables), and the MLM's top-1 prediction is compared
-    with the missing syllable. `mlm` is a transformers fill-mask pipeline, e.g.
-    pipeline("fill-mask", model="xlm-roberta-large").
+    For each broken word, the missing syllables are replaced by as many mask tokens as
+    their tokenizer uses inside the compressed context (±`window` syllables). The MLM's
+    top-1 token sequence is decoded and compared with each missing syllable. This avoids
+    treating a multi-subword syllable as unrecoverable by construction. `mlm` is a
+    transformers fill-mask pipeline, e.g. pipeline("fill-mask", model="xlm-roberta-large").
     """
     sylls = syllables_of(words)
     starts = np.cumsum([0] + [len(w.syllables) for w in words])
@@ -97,18 +180,31 @@ def recovery_rate(words: list[Word], syllable_mask: list[bool], mlm, max_words: 
             continue
         a, b = starts[wi], starts[wi + 1]
         lo, hi = max(0, a - window), min(len(sylls), b + window)
-        tokens, targets = [], []
+        tokens, targets, target_piece_counts = [], [], []
         for k in range(lo, hi):
             if a <= k < b and not syllable_mask[k]:
-                tokens.append(mlm.tokenizer.mask_token)
+                n_pieces = _subword_count(mlm.tokenizer, sylls[k])
+                tokens.extend([mlm.tokenizer.mask_token] * n_pieces)
                 targets.append(sylls[k].lower())
+                target_piece_counts.append(n_pieces)
             elif syllable_mask[k]:
                 tokens.append(sylls[k])
         predictions = mlm(" ".join(tokens), top_k=1)
-        if len(targets) == 1:  # the pipeline returns a flat list for a single mask
-            predictions = [predictions]
+        predictions = _top1_predictions(predictions, sum(target_piece_counts))
         total += 1
-        hits += all(p[0]["token_str"].strip().lower() == t for p, t in zip(predictions, targets))
+        offset, recovered = 0, True
+        for target, n_pieces in zip(targets, target_piece_counts):
+            group = predictions[offset:offset + n_pieces]
+            offset += n_pieces
+            if len(group) != n_pieces:
+                recovered = False
+                break
+            predicted = _decode_prediction(mlm.tokenizer,
+                                            [p.get("token_str", "") for p in group])
+            if normalize(predicted).lower() != normalize("".join(target.strip().split())).lower():
+                recovered = False
+                break
+        hits += recovered
     return hits / total if total else float("nan")
 
 
