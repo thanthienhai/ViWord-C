@@ -49,6 +49,20 @@ def test_align_matches_across_spelling_and_number_splits():
     assert all(mask) and unmatched == 0.0
 
 
+def test_align_repeated_words_and_numbers_in_source_order():
+    for repeated in ("của", "và", "2024"):
+        words = [W(repeated), W("A"), W(repeated), W("B")]
+        mask, unmatched = align_compressed(words, f"A {repeated} B")
+        assert mask == [False, True, True, True]
+        assert unmatched == 0.0
+
+
+def test_align_rejects_reordered_output():
+    mask, unmatched = align_compressed([W("A"), W("B")], "B A")
+    assert mask != [True, True]
+    assert unmatched == 0.5
+
+
 def test_json_roundtrip(sentence):
     doc = [sentence, [W("Tốt", "A"), W(".", "CH")]]
     assert doc_from_json(doc_to_json(doc)) == doc

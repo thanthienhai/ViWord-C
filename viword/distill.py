@@ -1,8 +1,9 @@
 """Distilled labels: one teacher output, two label views (DATN §3.2).
 
 1. The teacher LLM compresses the *unsegmented* text by deletion only.
-2. The output is aligned back to the original syllables (`segment.align_compressed`);
-   samples where the teacher rewrote too much (high unmatched ratio) are dropped.
+2. The output is aligned back to the original syllables with an exact LCS over normalized
+   letter/digit/punctuation tokens (`segment.align_compressed`); samples where the teacher
+   rewrote or reordered too much (high unmatched ratio) are dropped.
 3. Syllable labels: 1 if the syllable is kept (used by LLMLingua-2-vi).
    Word labels: soft label = share of the word's syllables that are kept (used by
    ViWord-C). Soft labels replace the "keep if ≥ 50%" rule, which turns every 1-of-2 tie
@@ -51,26 +52,35 @@ def teacher_compress(client, model: str, text: str, rate: float, max_tokens: int
 
 
 def make_labels(doc: Document, compressed: str) -> dict:
-    """Both label views from one teacher output, plus the teacher's own statistics."""
+    """Build both label views and diagnostics from one teacher alignment.
+
+    ``word_labels`` is the mean of the binary ``syllable_labels`` belonging to each
+    word.  Repeating each soft word label over that word's syllables therefore has the
+    same syllable-weighted mean as ``keep_rate``.  ``teacher_cbr`` is the fraction of
+    kept multi-syllable words that are partial (partial / (partial + full)).
+    """
     words = flatten(doc)
     syllable_mask, unmatched_ratio = align_compressed(words, compressed)
     syllable_labels = [int(k) for k in syllable_mask]
 
-    word_labels, partial, multi, i = [], 0, 0, 0
+    word_labels, partial, kept_multi, i = [], 0, 0, 0
     for w in words:
         n = len(w.syllables)
         kept = sum(syllable_labels[i:i + n])
         i += n
         word_labels.append(kept / n)
         if n > 1 and kept > 0:
-            multi += 1
+            kept_multi += 1
             partial += kept < n
+    total_syllables = len(syllable_labels)
     return {
         "syllable_labels": syllable_labels,
         "word_labels": word_labels,
         "unmatched_ratio": unmatched_ratio,
-        "keep_rate": sum(syllable_labels) / max(len(syllable_labels), 1),
-        "teacher_cbr": partial / multi if multi else 0.0,
+        "keep_rate": sum(syllable_labels) / max(total_syllables, 1),
+        "teacher_cbr": partial / kept_multi if kept_multi else 0.0,
+        "partial_multisyllable_words": partial,
+        "kept_multisyllable_words": kept_multi,
     }
 
 

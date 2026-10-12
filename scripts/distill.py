@@ -1,9 +1,11 @@
 """Build the distilled training labels from teacher outputs (DATN §3.2).
 
 Inputs: the (leak-filtered) paragraphs, their segmentation, and the teacher outputs written
-by scripts/teacher_compress.py. Outputs that rewrote the text (share of output words not in
-the source above --max-unmatched) or did not compress (keep rate above --max-keep-rate)
-are dropped. Prints the teacher's own statistics (keep rate, CBR).
+by scripts/teacher_compress.py. Outputs that rewrote or reordered the text (share of output
+alphanumeric tokens not in the exact LCS above --max-unmatched) or did not compress (keep
+rate above --max-keep-rate) are dropped. These fixed thresholds are ViWord-C's policy;
+LLMLingua-2's original data filter uses the top 10% quantiles of variation rate and
+alignment gap instead. Prints the teacher's own statistics (keep rate, CBR).
 
 Usage:
   python scripts/distill.py --paragraphs data/distill/paragraphs_clean.jsonl \
@@ -26,7 +28,7 @@ def main():
     ap.add_argument("--teacher", required=True, help="teacher_compress.py output")
     ap.add_argument("--output", required=True)
     ap.add_argument("--max-unmatched", type=float, default=0.1,
-                    help="drop outputs where more than this share of output words is not in the source")
+                    help="drop outputs where more than this share of output alphanumeric tokens is outside the LCS")
     ap.add_argument("--max-keep-rate", type=float, default=0.9,
                     help="drop outputs that kept more than this share of syllables (no compression)")
     args = ap.parse_args()
@@ -52,13 +54,23 @@ def main():
         stats[f"kept@{t['ratio']}"] += 1
         stats["sum_teacher_cbr"] += labels["teacher_cbr"]
         stats["sum_keep_rate"] += labels["keep_rate"]
+        stats["sum_partial_multisyllable_words"] += labels["partial_multisyllable_words"]
+        stats["sum_kept_multisyllable_words"] += labels["kept_multisyllable_words"]
         records.append({"id": t["id"], "rate": t["ratio"], "text": texts.get(t["id"], ""),
                         "compressed": t["compressed"], "doc": docs[t["id"]], **labels})
 
     write_jsonl(args.output, records)
     n = max(stats["kept"], 1)
     summary = {k: v for k, v in stats.items() if not k.startswith("sum_")}
-    summary.update(mean_teacher_cbr=stats["sum_teacher_cbr"] / n, mean_keep_rate=stats["sum_keep_rate"] / n)
+    partial = stats["sum_partial_multisyllable_words"]
+    kept_multi = stats["sum_kept_multisyllable_words"]
+    summary.update(
+        mean_teacher_cbr=stats["sum_teacher_cbr"] / n,
+        teacher_cbr=partial / kept_multi if kept_multi else 0.0,
+        partial_multisyllable_words=partial,
+        kept_multisyllable_words=kept_multi,
+        mean_keep_rate=stats["sum_keep_rate"] / n,
+    )
     print(json.dumps(summary, indent=2))
 
 

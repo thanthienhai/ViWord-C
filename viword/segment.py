@@ -1,18 +1,22 @@
 """Word segmentation and syllable/word bookkeeping.
 
-A document is a list of sentences and a sentence is a list of `Word`s. Every compressor
-decision is expressed as a boolean mask over syllables: syllable-level systems decide per
-syllable, word-level systems decide per word and expand the decision to its syllables.
-All systems render their output through the same `render()`, so punctuation and spacing
-are handled identically everywhere (DATN §3.1).
+A document is a list of sentences and a sentence is a list of `Word`s. Every mask-based
+compressor decision is expressed as a boolean mask over syllables: syllable-level systems
+decide per syllable, word-level systems decide per word and expand the decision to its
+syllables. Those systems render their output through the same `render()`, so punctuation
+and spacing are handled identically in the H1 2×2 comparison (DATN §3.1). Raw-text
+controls (`none`, `no_context`), the published LLMLingua package, `translate`, and
+`precomputed` intentionally bypass this renderer because they do not consume the
+Vietnamese syllable mask; none is an H1 2×2 cell.
 """
 from __future__ import annotations
 
 import os
 import re
 import unicodedata
+from bisect import bisect_left
+from collections import defaultdict
 from dataclasses import dataclass
-from difflib import SequenceMatcher
 
 
 @dataclass
@@ -111,14 +115,58 @@ def simple_tokens(text: str) -> list[str]:
     return [t.lower() for t in TOKEN_RE.findall(normalize(text))]
 
 
+def _lcs_matches(source: list[str], target: list[str]) -> list[tuple[int, int]]:
+    """Return one exact LCS as ``(source_index, target_index)`` pairs.
+
+    Hunt--Szymanski stores the best source endpoint for every LCS length and
+    reconstructs the matching pairs with predecessor links. Source positions
+    for a repeated token are visited backwards, as required by the algorithm;
+    this keeps the result an order-preserving subsequence without the
+    ``SequenceMatcher`` heuristic that prefers locally longest blocks.
+    """
+    positions: dict[str, list[int]] = defaultdict(list)
+    for i, token in enumerate(source):
+        positions[token].append(i)
+
+    tails: list[int] = []
+    tail_nodes: list[int] = []
+    node_source: list[int] = []
+    node_target: list[int] = []
+    node_prev: list[int] = []
+    for target_i, token in enumerate(target):
+        for source_i in reversed(positions.get(token, [])):
+            length = bisect_left(tails, source_i)
+            node = len(node_source)
+            node_source.append(source_i)
+            node_target.append(target_i)
+            node_prev.append(tail_nodes[length - 1] if length else -1)
+            if length == len(tails):
+                tails.append(source_i)
+                tail_nodes.append(node)
+            else:
+                tails[length] = source_i
+                tail_nodes[length] = node
+
+    if not tails:
+        return []
+    node = tail_nodes[-1]
+    matches = []
+    while node >= 0:
+        matches.append((node_source[node], node_target[node]))
+        node = node_prev[node]
+    matches.reverse()
+    return matches
+
+
 def align_compressed(words: list[Word], compressed_text: str) -> tuple[list[bool], float]:
     """Map an extractive compression back onto the original syllables.
 
-    Both sides are split into the same letter/punctuation tokens and matched with
-    difflib (longest matching blocks). A syllable counts as kept if any of its tokens is
-    matched. Returns (syllable_mask, unmatched_ratio), where unmatched_ratio is the share of
-    output *words* not found in the source; a high value means the compressor rewrote text
-    instead of only deleting it (used to filter teacher outputs).
+    Both sides are split into the same normalized letter/digit/punctuation tokens and
+    aligned with an exact longest common subsequence (LCS). A syllable counts as kept if
+    any of its tokens is matched. Returns ``(syllable_mask, unmatched_ratio)``, where
+    ``unmatched_ratio`` is the share of output alphanumeric tokens not in the selected
+    LCS; a high value means the compressor rewrote or reordered text (used to filter
+    teacher outputs). Repeated tokens are matched only in source order.
     """
     source, owner = [], []
     for si, syllable in enumerate(syllables_of(words)):
@@ -129,10 +177,9 @@ def align_compressed(words: list[Word], compressed_text: str) -> tuple[list[bool
 
     mask = [False] * len(syllables_of(words))
     matched_target = set()
-    for block in SequenceMatcher(a=source, b=target, autojunk=False).get_matching_blocks():
-        for k in range(block.size):
-            mask[owner[block.a + k]] = True
-            matched_target.add(block.b + k)
+    for source_i, target_i in _lcs_matches(source, target):
+        mask[owner[source_i]] = True
+        matched_target.add(target_i)
     # rewriting is measured on words only: inserted punctuation does not change the labels
     words = [k for k, t in enumerate(target) if t[0].isalnum()]
     unmatched_ratio = sum(k not in matched_target for k in words) / len(words) if words else 0.0

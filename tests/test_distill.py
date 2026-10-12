@@ -10,7 +10,22 @@ def test_soft_word_labels_and_teacher_cbr(sentence):
     assert labels["word_labels"][5] == 1.0  # Hà Nội
     assert labels["syllable_labels"][:2] == [1, 0]
     assert labels["teacher_cbr"] == 0.5
+    assert labels["partial_multisyllable_words"] == 1
+    assert labels["kept_multisyllable_words"] == 2
     assert labels["unmatched_ratio"] == 0.0
+
+
+def test_word_labels_are_the_syllable_weighted_view_of_the_same_mask(sentence):
+    labels = make_labels([sentence], "Học không đi học Hà Nội.")
+    expanded = []
+    cursor = 0
+    for word, soft_label in zip(sentence, labels["word_labels"]):
+        end = cursor + len(word.syllables)
+        syllable_slice = labels["syllable_labels"][cursor:end]
+        assert soft_label == sum(syllable_slice) / len(syllable_slice)
+        expanded.extend([soft_label] * len(syllable_slice))
+        cursor = end
+    assert sum(expanded) / len(expanded) == labels["keep_rate"]
 
 
 def test_leak_index():
