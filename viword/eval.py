@@ -18,6 +18,32 @@ NLI_LABELS = ["entailment", "contradiction", "neutral", "other"]
 MAIN_METRIC = {"vietnews": "rougeL", "vinli": "accuracy", "vimmrc": "accuracy", "belebele": "accuracy",
                "viquad": "f1", "gsm8k": "accuracy", "oneruler": "recall"}
 
+BUDGET_DEVIATION_THRESHOLD = 0.05
+
+
+def context_budget(text: str, ratio: float, counter) -> tuple[int, int]:
+    """Return ``(reader_tokens, budget)`` for the compressible context only.
+
+    The source context is deliberately used for every method, including
+    ``translate``: its parallel English text changes the compressor input, not the
+    common budget against which systems are compared. Instructions, questions and
+    answer choices are outside this count.
+    """
+    n_tokens = counter.count(text)
+    return n_tokens, round(ratio * n_tokens)
+
+
+def tokens_per_budget(n_tokens_compressed: int, budget: int) -> float | None:
+    """Return actual compressed tokens divided by B; undefined for B = 0."""
+    return n_tokens_compressed / budget if budget > 0 else None
+
+
+def budget_deviates(tokens_budget_ratio: float | None,
+                    threshold: float = BUDGET_DEVIATION_THRESHOLD) -> bool:
+    """Whether actual compressed length differs from B by more than ``threshold``."""
+    return (tokens_budget_ratio is not None
+            and abs(tokens_budget_ratio - 1.0) > threshold + 1e-12)
+
 
 def build_prompt(example: Example, context: str) -> str:
     if example.task == "summ":

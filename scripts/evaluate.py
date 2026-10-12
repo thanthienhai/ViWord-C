@@ -20,7 +20,8 @@ import os
 from tqdm import tqdm
 
 from viword.data import TASKS, load_contexts, load_task, read_jsonl, write_jsonl
-from viword.eval import MAX_NEW_TOKENS, APIReader, HFReader, VLLMReader, build_prompt, parse_prediction, score
+from viword.eval import (MAX_NEW_TOKENS, APIReader, HFReader, VLLMReader, budget_deviates,
+                         build_prompt, context_budget, parse_prediction, score, tokens_per_budget)
 from viword.methods import build_compressor
 from viword.select import TokenCounter
 
@@ -38,13 +39,17 @@ def compress_all(args, examples, contexts) -> list[dict]:
         for ratio in ratios:
             for ex, ctx in tqdm(list(zip(examples, contexts)), desc=f"{compressor.name} @ {ratio:.2f}"):
                 ctx.ratio = ratio
-                n_original = counter.count(ctx.text)
-                budget = round(ratio * n_original)
+                n_original, budget = context_budget(ctx.text, ratio, counter)
                 compressed = compressor.compress(ctx, budget, counter)
+                n_compressed = counter.count(compressed)
+                actual_ratio = tokens_per_budget(n_compressed, budget)
                 rows.append({"id": ex.id, "cluster": ex.cluster, "method": compressor.name,
+                             "budget_tokenizer": args.tokenizer or args.reader,
                              "ratio": round(ratio, 3), "budget": budget,
                              "n_tokens_original": n_original,
-                             "n_tokens_compressed": counter.count(compressed),
+                             "n_tokens_compressed": n_compressed,
+                             "tokens_per_budget": actual_ratio,
+                             "budget_deviation_5pct": budget_deviates(actual_ratio),
                              "compressed": compressed})
     return rows
 
@@ -85,6 +90,15 @@ def main():
             torch.cuda.empty_cache()
         except ImportError:
             pass
+
+    # Caches created before the explicit adherence fields were added remain usable.
+    # Recompute these fields so every output row has the same budget report whether
+    # compression was just run or reused.
+    for row in compressed_rows:
+        actual_ratio = tokens_per_budget(row["n_tokens_compressed"], row["budget"])
+        row.setdefault("budget_tokenizer", args.tokenizer or args.reader)
+        row["tokens_per_budget"] = actual_ratio
+        row["budget_deviation_5pct"] = budget_deviates(actual_ratio)
 
     by_id = {ex.id: ex for ex in examples}
     if args.backend == "vllm":
