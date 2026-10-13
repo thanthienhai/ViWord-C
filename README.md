@@ -81,12 +81,13 @@ READER=Viet-Mistral/Vistral-7B-Chat READER_SYSTEM_PROMPT="..." bash scripts/run_
 bash scripts/run_pipeline.sh teacher_check           # thầy nén 200 mẫu dev mỗi tác vụ -> cận trên / cổng G4
 bash scripts/run_pipeline.sh teacher_gate gate_eval  # cần reader: quyết định G4, rồi G1/G2/G3 trên tập dev
 bash scripts/run_pipeline.sh teacher distill train   # chưng cất + 3 seed × 2 loại nhãn (cần GPU lớn)
-READER_BACKEND=vllm bash scripts/run_pipeline.sh teacher_test ckpt_check eval analyze
+READER_BACKEND=vllm bash scripts/run_pipeline.sh ckpt_check eval analyze   # teacher_test chạy trước, ở máy gọi được thầy
 ```
 
 `ckpt_check` là cổng bắt buộc giữa `train` và `eval`: trên đúng 200 mẫu của mỗi dev set cấu hình, ở tỉ lệ 1/3,
 stage chạy reader cho mọi `viword_s*` (quyết định cấp từ) và `llmlingua2vi_s*` (cấp âm tiết), rồi so điểm chính với
-`truncation` và baseline tra từ `lexical`. Mọi checkpoint phải thắng cả hai baseline; báo cáo ở
+`truncation` và đối chứng tra từ `lexprior` (khớp trên phần train của encoder). Mỗi `viword_s*` phải thắng từng
+baseline trên đa số dev set (cùng quy tắc đa số với G4); `llmlingua2vi_s*` chỉ để tham khảo, không chặn. Báo cáo ở
 `results/ckpt_check/report.{md,json}` phải là `PASS`, nếu không `stage_eval` dừng.
 
 `mde` chạy trước `eval` trên các split dev, dùng cùng ba seed và bootstrap phân tầng seed → cụm. Nó ghi
@@ -217,7 +218,8 @@ hóa là: ViNLI = premise, ViMMRC = đoạn, Belebele = `link`, VietNews = bài 
 trường `task/id/cluster/method/ratio/accuracy` mà `evaluate.py` ghi ra và kiểm tra Belebele có 488 cụm, ViNLI test có
 377 premise khi dữ liệu đã chuẩn bị.
 
-Chạy full trên H100: [`docs/RUN_FULL_H100.md`](docs/RUN_FULL_H100.md) (`scripts/full_h100.sh`, hai pha).
+Chạy full trên H100: [`docs/RUN_OPS.md`](docs/RUN_OPS.md) (`scripts/ops_full_run.sh`, ba phần, cho đội vận hành);
+chạy từng pha bằng tay: [`docs/RUN_FULL_H100.md`](docs/RUN_FULL_H100.md) (`scripts/full_h100.sh`).
 
 Các ô của thiết kế 2×2 (§2.3) chỉ khác nhau ở checkpoint và `unit`:
 
