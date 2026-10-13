@@ -1,6 +1,6 @@
 """Share the data/ folder (not in git) through a private Hugging Face dataset repo.
 
-  python scripts/hf_data.py push --repo <user>/viword-c-data     # upload data/ (+ teacher dev outputs)
+  python scripts/hf_data.py push --repo <user>/viword-c-data     # upload data/ (+ teacher dev/test outputs)
   python scripts/hf_data.py pull --repo <user>/viword-c-data     # download into data/ and results/
 
 Needs `huggingface-cli login` (or HF_TOKEN) with write access for push. The repo is created
@@ -10,15 +10,20 @@ Every push is a new commit, so a result can always be tied to the exact data rev
 import argparse
 
 FOLDERS = {"data/tasks": "tasks", "data/segmented": "segmented", "data/distill": "distill",
-           "results/teacher_dev": "teacher_dev"}
+           "results/teacher_dev": "teacher_dev", "results/teacher_test": "teacher_test"}
 
 
 def push(repo: str, message: str) -> None:
+    import os
+
     from huggingface_hub import HfApi
 
     api = HfApi()
     api.create_repo(repo, repo_type="dataset", private=True, exist_ok=True)
     for local, remote in FOLDERS.items():
+        if not os.path.isdir(local):  # e.g. results/teacher_test before the teacher_test stage
+            print(f"skip {local}: not found")
+            continue
         print(f"upload {local} -> {repo}/{remote}")
         api.upload_folder(repo_id=repo, repo_type="dataset", folder_path=local, path_in_repo=remote,
                           allow_patterns=["*.jsonl", "*.json", "*.meta.json"], ignore_patterns=["smoke_*"],

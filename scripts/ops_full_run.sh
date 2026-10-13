@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
-# ViWord-C full run for the GPU ops team: one file, two parts. Needs 1x H100 80 GB, ~100 GB of disk,
-# internet (GitHub, Hugging Face, pip) and read access to the private HF repo thanthienhai/viword-c-data
-# (export HF_TOKEN=hf_xxx, or `huggingface-cli login`).
+# ViWord-C full run for the GPU ops team: one file, three parts. Needs 1x H100 80 GB, ~100 GB of disk,
+# internet (GitHub, Hugging Face, pip) and a Hugging Face token that can read the private repo
+# thanthienhai/viword-c-data and the gated Viet-Mistral/Vistral-7B-Chat (export HF_TOKEN=hf_xxx).
 #
 #   bash ops_full_run.sh part1   # ~5-6 h: environment, data check, pre-check of the new tasks,
-#                                #         diagnostics (gates G1/G2/G5), phase 1 (gates on dev, labels, 6 encoders)
-#   bash ops_full_run.sh part2   # ~8-12 h: phase 2 (evaluation on 7 test sets + analysis)
+#                                #         diagnostics, phase 1 (gates on dev, labels, 6 encoders, ckpt_check)
+#   bash ops_full_run.sh part2   # ~2-4 h: phase 2 (dev decisions: diagnostics, select π, MDE)
+#   bash ops_full_run.sh part3   # ~12-18 h: update the code (committed π), phase 3 (7 test sets + analysis)
 #
-# After each part, send back the .tgz printed on the last line. Start part2 ONLY when the project
-# owner says so. Do not edit code on the machine; on an error, send the .tgz anyway (it holds the logs).
-# Settings via environment, e.g.: GPU=1 WORKDIR=/mnt/hps/anhm-paper/viword-c-full bash ops_full_run.sh part1
-# After an error, rerun the same command with the same WORKDIR: finished steps are skipped (phase 1 itself
-# restarts from its first stage). Out of GPU memory in vLLM: add VIWORD_VLLM_GPU_UTIL=0.7. Steps: docs/RUN_OPS.md
+# After each part, send back the .tgz printed on the last line. Start the next part ONLY when the
+# project owner says so. Do not edit code on the machine; on an error, send the .tgz anyway (it holds
+# the logs). Settings via environment, e.g.: GPU=1 WORKDIR=/mnt/hps/anhm-paper/viword-c-full bash ops_full_run.sh part1
+# After an error, rerun the same command with the same WORKDIR: finished steps are skipped (a phase
+# itself restarts from its first stage). Out of GPU memory in vLLM: add VIWORD_VLLM_GPU_UTIL=0.7.
+# Steps: docs/RUN_OPS.md
 set -euo pipefail
 
 SELF=$(realpath "$0")
@@ -52,11 +54,16 @@ step() {  # run one step with its own log in $OUT; on failure print the tail and
 run() { step "$@" || { pack "$PART-FAILED"; exit 1; }; }           # later steps need this one
 try_run() { step "$@" || echo "$1" >> "$OUT/FAILED_STEPS"; }       # phase 1 does not need this one
 
+pull_data() {  # data files added by the project owner after part1 (e.g. results/teacher_test)
+  python scripts/hf_data.py pull --repo "$HF_DATA_REPO" --revision "$HF_DATA_REVISION"
+}
+
 check_data() {  # every data file must match the checksums committed with the code
   sha256sum --quiet -c data/SHA256SUMS || die "data differs from data/SHA256SUMS: wrong HF revision"
   python scripts/check_segmented.py --directory data/segmented --segmenter vncorenlp \
     || die "segmented data is missing VnCoreNLP provenance or has been modified"
-  python - <<EOF | tee "$OUT/data_revision.txt"
+  echo "# $(date '+%F %T')" >> "$OUT/data_revision.txt"   # one block per part: the code may move in part3
+  python - <<EOF | tee -a "$OUT/data_revision.txt"
 from huggingface_hub import HfApi
 info = HfApi().dataset_info("$HF_DATA_REPO", revision="$HF_DATA_REVISION")
 print(f"data {info.id} @ {info.sha}")
@@ -101,13 +108,11 @@ print("pre-check OK")
 EOF
 }
 
-diagnose() {  # G1 (CBR), G2 (negated ViNLI pairs), G5 on the current segmentation, with the 1.5B LM
+diagnose() {  # G1 (CBR), G2 (negated ViNLI pairs), G5; needs the filled blind sheets in data/annot
   bash scripts/run_pipeline.sh protect_eval diagnose
   cp results/diagnose/belebele.json results/diagnose/vinli.json results/diagnose/gate_report.md \
+    results/protect_eval.md results/protect_eval.json \
     results/probe_negation_eval.md results/probe_negation_eval.json "$OUT"/
-  for report in results/diagnose/llmlingua2vi_*.json; do
-    [ -e "$report" ] && cp "$report" "$OUT"/
-  done
 }
 
 part1() {
@@ -129,7 +134,7 @@ part1() {
   log "part1: code $(git rev-parse --short HEAD), data $HF_DATA_REPO @ $HF_DATA_REVISION, GPU $GPU"
   df -h "$WORKDIR" | tail -1
 
-  run setup bash scripts/smoke_h100.sh setup check_data   # venv, 48 unit tests, GPU check, data pull
+  run setup bash scripts/smoke_h100.sh setup check_data   # venv, unit tests, GPU check, data pull
   grep -E "passed|failed|error|GPU:" "$OUT/setup.log"
   # tests that need the prepared data are skipped here: setup runs them before the data pull
   if ! grep -qE "^[0-9]+ passed(, [0-9]+ skipped)?(, [0-9]+ warnings?)? in" "$OUT/setup.log" \
@@ -142,6 +147,7 @@ part1() {
   nvidia-smi > "$OUT/nvidia_smi.txt" 2>&1 || true
   run check_data check_data
   # a failure in these two does not block phase 1; it is listed in $OUT/FAILED_STEPS
+  # (diagnose runs again in phase 2, after training, and must pass there)
   try_run precheck precheck
   try_run diagnose diagnose
   # phase 1 writes its own stage logs and full.log into $OUT and stops on the first error
@@ -163,7 +169,48 @@ part2() {
   pack part2
 }
 
+update_code() {  # fast-forward to the commit with the π chosen in part2; log what else changed
+  local before after
+  before=$(git rev-parse HEAD)
+  # select_pi wrote config/pi_selected.* here; keep that copy, the committed one replaces it
+  mkdir -p "$OUT/pi_selected_part2"
+  for f in config/pi_selected.json config/pi_selected.env; do
+    if [ -e "$f" ] && ! git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+      mv "$f" "$OUT/pi_selected_part2/"
+    fi
+  done
+  git fetch -q origin "$CODE_REF"
+  git merge -q --ff-only FETCH_HEAD || die "cannot fast-forward the code to origin/$CODE_REF: ask the project owner"
+  after=$(git rev-parse HEAD)
+  echo "code $before -> $after"
+  git diff --stat "$before" "$after"
+  git ls-files --error-unmatch config/pi_selected.json config/pi_selected.env >/dev/null 2>&1 \
+    || die "config/pi_selected.* is not committed at origin/$CODE_REF: the project owner has not pushed π yet"
+  for f in pi_selected.json pi_selected.env; do
+    [ -e "$OUT/pi_selected_part2/$f" ] && ! diff -u --strip-trailing-cr "$OUT/pi_selected_part2/$f" "config/$f" \
+      && echo "NOTE: committed config/$f differs from the part2 output above"
+  done
+  pip install -q -e ".[model,eval,baselines,dev]"   # in case the dependencies changed
+}
+
+part3() {
+  [ -d "$WORKDIR/$OUT" ] || die "$WORKDIR/$OUT not found: run part1 first, in the same WORKDIR"
+  cd "$WORKDIR"
+  grep -q "Phase 2 done" "$OUT/full.log" || die "phase 2 did not finish: rerun part2"
+  exec > >(tee -a "$OUT/ops_part3.log") 2>&1
+  log "part3: code $(git rev-parse --short HEAD), GPU $GPU"
+  # shellcheck disable=SC1091
+  source .venv/bin/activate
+  # always fetch the latest code and data: the project owner may have pushed a fix after a failed run
+  rm -f "$OUT/.done_update_code" "$OUT/.done_pull_data_part3" "$OUT/.done_check_data_part3"
+  run update_code update_code
+  run pull_data_part3 pull_data
+  run check_data_part3 check_data
+  bash scripts/full_h100.sh phase3 || { pack "$PART-FAILED"; die "phase 3 failed, see $OUT/full.log"; }
+  pack part3
+}
+
 PART=${1:-}
 if [ "$PART" = _call ]; then shift; "$@"; exit; fi                 # one step, called by step()
-[[ $PART =~ ^part[12]$ ]] || { grep -E '^#( |$)' "$0" | head -16; exit 1; }
+[[ $PART =~ ^part[123]$ ]] || { grep -E '^#( |$)' "$0" | head -17; exit 1; }
 "$PART"

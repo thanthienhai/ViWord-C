@@ -465,7 +465,8 @@ stage_select_alpha() {  # DATN §3.5/H3 (8-page): select α on VietNews + ViNLI 
     --report results/alpha_selection.md
 }
 
-stage_teacher_test() {  # DATN §4.2: teacher upper bound on a held-out test subset
+stage_teacher_test() {  # DATN §4.2: teacher upper bound on a held-out test subset; needs TEACHER_URL,
+  # so it runs on the owner side and ships with the HF data (scripts/hf_data.py push)
   mkdir -p results/teacher_test
   for spec in $TEST_SETS; do
     IFS=: read -r _ stem field <<< "$spec"
