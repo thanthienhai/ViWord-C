@@ -131,7 +131,9 @@ part1() {
 
   run setup bash scripts/smoke_h100.sh setup check_data   # venv, 48 unit tests, GPU check, data pull
   grep -E "passed|failed|error|GPU:" "$OUT/setup.log"
-  if ! grep -qE "^[0-9]+ passed in" "$OUT/setup.log" || grep -qE "[0-9]+ (failed|error)" "$OUT/setup.log"; then
+  # tests that need the prepared data are skipped here: setup runs them before the data pull
+  if ! grep -qE "^[0-9]+ passed(, [0-9]+ skipped)?(, [0-9]+ warnings?)? in" "$OUT/setup.log" \
+     || grep -qE "[0-9]+ (failed|errors?)" "$OUT/setup.log"; then
     pack "$PART-FAILED"; die "unit tests did not all pass"
   fi
   # shellcheck disable=SC1091
