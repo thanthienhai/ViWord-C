@@ -10,7 +10,7 @@ Usage:
       --segmented data/segmented/vinli_test.jsonl --limit 500 \
       --budget-tokenizer Qwen/Qwen2.5-7B-Instruct \
       --cost-tokenizers Qwen/Qwen2.5-7B-Instruct meta-llama/Llama-3.1-8B-Instruct \
-          Viet-Mistral/Vistral-7B-Chat SeaLLMs/SeaLLMs-v3-7B-Chat google/gemma-2-9b-it \
+          SeaLLMs/SeaLLM-7B-v2 SeaLLMs/SeaLLMs-v3-7B-Chat google/gemma-2-9b-it \
       --methods random lead truncation llmlingua2 llmlingua:lm=Qwen/Qwen2.5-1.5B \
           selective_context:lm=Qwen/Qwen2.5-1.5B \
           scored:model=microsoft/llmlingua-2-xlm-roberta-large-meetingbank,unit=syllable,name=llmlingua2_syl \
@@ -68,8 +68,8 @@ def main():
     try:
         cost_counters = {name: TokenCounter(AutoTokenizer.from_pretrained(name)) for name in args.cost_tokenizers}
     except OSError as exc:
-        raise SystemExit(f"diagnose: cannot load a --cost-tokenizers entry ({exc}); gated repos such as "
-                         "Viet-Mistral/Vistral-7B-Chat need an HF token with access") from exc
+        raise SystemExit(f"diagnose: cannot load a --cost-tokenizers entry ({exc}); gated repos need an HF "
+                         "token with access") from exc
     mlm = pipeline("fill-mask", model=args.rr_model) if args.rr_model else None
     multi_syllable_lengths = [len(w.syllables) for ctx in contexts for w in flatten(ctx.doc)
                               if not w.is_punct and len(w.syllables) > 1]

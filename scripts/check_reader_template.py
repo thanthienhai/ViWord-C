@@ -1,13 +1,12 @@
 """Print the exact prompt a reader receives, after its chat template (tasks.md I4).
 
-Run once per reader before the evaluation, on a machine with access to the model (the
-Vistral repository is gated), and check that the system prompt, the [INST]/role markers
-and the generation prompt look as the model card describes.
+Run once per reader before the evaluation and check that the system prompt, the role
+markers (<|im_start|> ... </s> for SeaLLM-7B-v2) and the generation prompt look as the
+model card describes.
 
 Usage:
-  python scripts/check_reader_template.py --reader Viet-Mistral/Vistral-7B-Chat \
-      --data data/tasks/vimmrc_dev.jsonl --task vimmrc \
-      --system-prompt "Bạn là một trợ lí Tiếng Việt nhiệt tình và trung thực."
+  python scripts/check_reader_template.py --reader SeaLLMs/SeaLLM-7B-v2 \
+      --data data/tasks/vimmrc_dev.jsonl --task vimmrc
 """
 import argparse
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ViWord-C full run for the GPU ops team: one file, three parts. Needs 1x H100 80 GB, ~100 GB of disk,
 # internet (GitHub, Hugging Face, pip) and a Hugging Face token that can read the private repo
-# thanthienhai/viword-c-data and the gated Viet-Mistral/Vistral-7B-Chat (export HF_TOKEN=hf_xxx).
+# thanthienhai/viword-c-data (export HF_TOKEN=hf_xxx).
 #
 #   bash ops_full_run.sh part1   # ~5-6 h: environment, data check, pre-check of the new tasks,
 #                                #         diagnostics, phase 1 (gates on dev, labels, 6 encoders, ckpt_check)

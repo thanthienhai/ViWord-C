@@ -68,7 +68,7 @@ def test_dev_decisions_are_tied_to_the_primary_reader():
 def test_cost_tokenizers_cover_the_datn_list_and_g5_counts_them_all():
     text = PIPELINE.read_text(encoding="utf-8")
     line = next(l for l in text.splitlines() if l.startswith("COST_TOKENIZERS="))
-    for name in ("Qwen2.5", "Llama-3.1", "gemma-2", "SeaLLMs", "Vistral"):
+    for name in ("Qwen2.5", "Llama-3.1", "gemma-2", "SeaLLMs-v3", "SeaLLM-7B-v2"):
         assert name in line, name
     gate_report = (PIPELINE.parent / "gate_report.py").read_text(encoding="utf-8")
     assert "xlm-roberta-base" not in gate_report

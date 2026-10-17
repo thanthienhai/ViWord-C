@@ -167,8 +167,8 @@ def score(example: Example, prediction: str) -> dict[str, float]:
 # ---------------------------------------------------------------------------- reader
 
 def chat_messages(prompt: str, system_prompt: str | None = None) -> list[dict]:
-    """One zero-shot turn. Some readers expect a system prompt (Vistral's model card uses
-    one); the same `system_prompt` is then used for every method and ratio of that reader."""
+    """One zero-shot turn. Some readers expect a system prompt; when one is given, the same
+    `system_prompt` is used for every method and ratio of that reader."""
     messages = [{"role": "system", "content": system_prompt}] if system_prompt else []
     return messages + [{"role": "user", "content": prompt}]
 

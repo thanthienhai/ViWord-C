@@ -26,7 +26,7 @@ SEG_WORKERS=${SEG_WORKERS:-16}              # parallel segmenter processes
 READER=${READER:-Qwen/Qwen2.5-7B-Instruct}
 # DATN §3.5/§4.1: gates, ckpt_check, π and α selection and the MDE use the primary reader only;
 # their choices are then fixed for every reader. Run the second reader with e.g.
-#   READER=Viet-Mistral/Vistral-7B-Chat READER_SYSTEM_PROMPT="..." bash scripts/run_pipeline.sh eval
+#   READER=SeaLLMs/SeaLLM-7B-v2 bash scripts/run_pipeline.sh eval
 # (check its chat template first with scripts/check_reader_template.py).
 PRIMARY_READER=${PRIMARY_READER:-Qwen/Qwen2.5-7B-Instruct}
 export READER_SYSTEM_PROMPT=${READER_SYSTEM_PROMPT:-}
@@ -73,8 +73,8 @@ TEST_SETS="belebele:belebele:context vinli:vinli_test:premise vimmrc:vimmrc_test
 DEV_SETS="vinli:vinli_dev:premise vimmrc:vimmrc_dev:context vietnews:vietnews_dev:context"
 # dev sets of the tasks added on 2026-10-04: segmented and leak-checked, not used by the gates
 EXTRA_DEV_SETS="viquad:viquad_dev:context gsm8k:gsm8k_dev:context oneruler:oneruler_dev:context"
-# DATN §2.2: Qwen2.5, Llama-3.1, Gemma-2, SeaLLM and Vistral (the second reader); Gemma-3 is the 8-page reader
-COST_TOKENIZERS="Qwen/Qwen2.5-7B-Instruct unsloth/Llama-3.1-8B-Instruct unsloth/gemma-2-9b-it SeaLLMs/SeaLLMs-v3-7B-Chat Viet-Mistral/Vistral-7B-Chat unsloth/gemma-3-12b-it"
+# DATN §2.2: Qwen2.5, Llama-3.1, Gemma-2, SeaLLM-v3 and SeaLLM-7B-v2 (the second reader); Gemma-3 is the 8-page reader
+COST_TOKENIZERS="Qwen/Qwen2.5-7B-Instruct unsloth/Llama-3.1-8B-Instruct unsloth/gemma-2-9b-it SeaLLMs/SeaLLMs-v3-7B-Chat SeaLLMs/SeaLLM-7B-v2 unsloth/gemma-3-12b-it"
 LIMIT_ARG=${LIMIT:+--limit $LIMIT}
 
 if [ "$SEGMENTER" != "vncorenlp" ]; then

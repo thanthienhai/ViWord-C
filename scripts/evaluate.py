@@ -95,7 +95,7 @@ def main():
                     help="HF id of the reader's tokenizer, if --reader is not a HF id (api backend)")
     ap.add_argument("--workers", type=int, default=16, help="parallel requests for --backend api")
     ap.add_argument("--system-prompt", default=os.environ.get("READER_SYSTEM_PROMPT") or None,
-                    help="optional system message for readers whose chat template expects one (Vistral)")
+                    help="optional system message for readers whose chat template expects one")
     args = ap.parse_args()
 
     examples = load_task(args.task, args.data, args.limit)
