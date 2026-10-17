@@ -23,7 +23,8 @@ Lý do phải dừng giữa các phần:
 **Khác với bản hướng dẫn trước (hai phần):**
 - Có thêm **phần 3**. Phần 2 cũ (nén + đọc trên test) nay là phần 3, chạy sau khi chủ đề tài commit π.
 - Phần 2 mới chỉ chạy trên dev: chẩn đoán, chọn π, tính MDE.
-- Token Hugging Face phải được duyệt quyền mô hình gated `Viet-Mistral/Vistral-7B-Chat` (mục 1).
+- Máy cần có Java (mục 1). Reader thứ hai là `SeaLLMs/SeaLLM-7B-v2` (không gated) thay cho Vistral, nên token chỉ
+  cần quyền đọc repo dữ liệu.
 - **Tải lại `ops_full_run.sh` trước mỗi phần.** Bản cũ không có `part3` và không kiểm tra dữ liệu mới.
 - Hai cổng `ckpt_check` (phần 1) và `mde` (phần 2) có thể dừng với kết quả `FAIL`. Đó là kết quả nghiên cứu, không phải
   lỗi máy (mục 5).
@@ -52,17 +53,18 @@ với thông báo ở mục 5.
 | GPU | 1× H100 80 GB (bf16); `nvidia-smi` chạy được. Lần smoke dùng image `dynamo-vllm-runtime:1.5.0-cu130-vllm0290`: dùng lại được |
 | Đĩa | khoảng **100 GB** trống ở `WORKDIR` (môi trường Python, mô hình, 6 checkpoint ~13 GB, các bản nén và kết quả) |
 | Mạng | truy cập được github.com, huggingface.co và pypi.org |
-| Tài khoản Hugging Face | một token có quyền đọc repo **private** `thanthienhai/viword-c-data` (dùng lại secret của lần smoke), **và** tài khoản của token đã được duyệt quyền truy cập mô hình **gated** [`Viet-Mistral/Vistral-7B-Chat`](https://huggingface.co/Viet-Mistral/Vistral-7B-Chat) (vào trang mô hình, bấm đồng ý điều khoản, chờ duyệt). Bước `diagnose` cần tokenizer của Vistral |
+| Tài khoản Hugging Face | một token có quyền đọc repo **private** `thanthienhai/viword-c-data` (dùng lại secret của lần smoke). Mọi mô hình đều không gated |
+| Java | JRE ≥ 8 (`java -version` chạy được), ví dụ `apt-get install -y openjdk-17-jre-headless`. VnCoreNLP cần Java cho bước `bertscore` ở phần 3; phần 1 kiểm tra ngay từ đầu và dừng nếu thiếu |
 | Thư mục | `WORKDIR` nằm trên ổ được giữ lại qua cả ba phần (PVC/NFS), vì phần sau đọc checkpoint và báo cáo của phần trước |
 
-Không cần Java hay mô hình thầy: dữ liệu đã tách từ và mọi đầu ra của thầy đều có sẵn trên Hugging Face.
+Không cần mô hình thầy: dữ liệu đã tách từ và mọi đầu ra của thầy đều có sẵn trên Hugging Face.
 
-Kiểm tra nhanh token trước khi chạy (cả hai lệnh phải in `ok`; `401`/`403` là chưa có quyền):
+Kiểm tra nhanh trước khi chạy (lệnh `curl` phải in `ok`; `401`/`403` là token chưa có quyền):
 
 ```bash
 export HF_TOKEN=hf_xxx
 curl -fsS -o /dev/null -H "Authorization: Bearer $HF_TOKEN"   https://huggingface.co/api/datasets/thanthienhai/viword-c-data && echo ok
-curl -fsSL -o /dev/null -H "Authorization: Bearer $HF_TOKEN"   https://huggingface.co/Viet-Mistral/Vistral-7B-Chat/resolve/main/tokenizer_config.json && echo ok
+java -version
 ```
 
 ## 2. Phần 1 (`part1`, khoảng 5–6 giờ)
@@ -86,8 +88,9 @@ Script tự làm lần lượt các bước sau:
 | Bước | Việc | Thời gian ước tính |
 |---|---|---|
 | clone | clone code vào `WORKDIR` | < 1 phút |
-| `setup` | tạo `.venv`, cài torch / transformers / vLLM / llmlingua / bert_score, chạy unit test (vài test cần dữ liệu được bỏ qua, `skipped` là bình thường), kiểm tra GPU, tải dữ liệu từ Hugging Face | 10–15 phút |
+| `setup` | tạo `.venv`, cài torch / transformers / vLLM / llmlingua / bert_score / py_vncorenlp, chạy unit test (vài test cần dữ liệu được bỏ qua, `skipped` là bình thường), kiểm tra GPU, tải dữ liệu từ Hugging Face | 10–15 phút |
 | `check_data` | so từng file dữ liệu với `data/SHA256SUMS` trong code, kiểm tra nguồn gốc tách từ (VnCoreNLP); ghi phiên bản code và dữ liệu | 1 phút |
+| `vncorenlp` | tải mô hình VnCoreNLP vào `models/vncorenlp/` và khởi động thử (cần Java); dùng cho `bertscore` ở phần 3 | 1–10 phút (tải từ raw.githubusercontent.com, có thể chậm) |
 | `precheck` | chạy thử 20 mẫu cho mỗi tác vụ mới (ViQuAD, GSM8K, OneRuler) và translate-then-compress trên Belebele | 15–20 phút |
 | `diagnose` | đánh giá bộ phát hiện P trên phiếu đã gán nhãn; chẩn đoán G1, G2, G5 trên Belebele và ViNLI | 30–45 phút |
 | `gate_eval` | cổng G1/G2/G3 trên 3 tập dev (13 bộ nén, thêm probe trên ViNLI, × 3 tỉ lệ) | 30–60 phút |
@@ -183,7 +186,7 @@ Các lỗi khác:
 | `data differs from data/SHA256SUMS` | dữ liệu trên Hugging Face chưa khớp với code. Báo chủ đề tài; **không** chạy tiếp bằng cách khác |
 | `segmented data is missing VnCoreNLP provenance` | như trên: dữ liệu tách từ trên Hugging Face chưa phải bản mới. Báo chủ đề tài |
 | lỗi 401/403 khi tải dữ liệu | token không có quyền đọc repo `thanthienhai/viword-c-data` |
-| `gated repo` / `Access to model Viet-Mistral/Vistral-7B-Chat is restricted` (ở `diagnose`) | tài khoản của token chưa được duyệt Vistral (mục 1). Xin quyền rồi chạy lại |
+| `no Java` hoặc lỗi Java ở bước `vncorenlp` / `bertscore` | cài JRE ≥ 8 (mục 1) rồi chạy lại cùng lệnh |
 | `missing annotator for`, `gold_tiers not filled in`, `labels must come from a blind sheet`, `missing results/protect_eval.json` | chủ đề tài chưa điền xong phiếu mù. Ở phần 1 chỉ ghi vào `FAILED_STEPS`; ở phần 2 thì báo chủ đề tài, chờ, rồi chạy lại `part2` |
 | `config/pi_selected.* is not committed at origin/main` | chủ đề tài chưa commit π. Báo chủ đề tài, chờ, rồi chạy lại `part3` |
 | `cannot fast-forward the code` | code trên máy đã bị sửa hoặc lịch sử `main` bị viết lại. Gửi file `-FAILED.tgz`; không tự `git reset` |
@@ -247,5 +250,5 @@ python scripts/hf_data.py push --repo thanthienhai/viword-c-data --message "teac
 
 Có thể làm bước 2 ngay từ trước phần 1, vì nó không phụ thuộc kết quả nào trên GPU. Bản 8 trang (H3) còn cần
 `select_alpha` trên dev và commit `config/alpha_selected.*` trước phần 3; không có hai file này thì `eval` bỏ qua các
-dòng H3. Reader thứ hai (Vistral) không nằm trong ba phần này: chạy riêng `eval` với `READER=Viet-Mistral/Vistral-7B-Chat`
+dòng H3. Reader thứ hai (SeaLLM-7B-v2) không nằm trong ba phần này: chạy riêng `eval` với `READER=SeaLLMs/SeaLLM-7B-v2`
 sau khi đã kiểm tra chat template (`scripts/check_reader_template.py`).

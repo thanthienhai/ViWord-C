@@ -17,7 +17,7 @@ lớn, để chắc mã nguồn chạy được và xem trước xu hướng. Qu
 | Mạng | truy cập được github.com, huggingface.co và pypi.org |
 | Tài khoản | tài khoản Hugging Face có quyền đọc repo **private** `thanthienhai/viword-c-data` (nhờ chủ repo mời vào) |
 
-Dữ liệu được tải tự động và cố định ở một phiên bản (revision `ee91d9e`), nên mọi lần chạy dùng cùng một bộ dữ liệu.
+Dữ liệu được tải tự động và cố định ở một phiên bản (revision `2971cdf`, dữ liệu tách từ VnCoreNLP ngày 12/10, khớp `data/SHA256SUMS`), nên mọi lần chạy dùng cùng một bộ dữ liệu.
 
 ## 1. Lấy code và đăng nhập Hugging Face
 

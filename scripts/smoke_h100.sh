@@ -22,7 +22,7 @@ cd "$(dirname "$0")/.."
 
 GPU=${GPU:-0}
 HF_DATA_REPO=${HF_DATA_REPO:-thanthienhai/viword-c-data}
-HF_DATA_REVISION=${HF_DATA_REVISION:-ee91d9e2ecfc96735d8e51a9a400e512b621f279}  # data of 2026-10-01
+HF_DATA_REVISION=${HF_DATA_REVISION:-2971cdf2b08215e7c9f97a51cfccc152624dfcf1}  # VnCoreNLP data of 2026-10-12
 VENV=${VENV:-.venv}
 ENCODER=${ENCODER:-xlm-roberta-large}
 READER=${READER:-Qwen/Qwen2.5-7B-Instruct}
@@ -44,8 +44,9 @@ step_setup() {
   # shellcheck disable=SC1091
   source "$VENV/bin/activate"
   pip install -q --upgrade pip
-  # torch, transformers, vllm, datasets, pytest; llmlingua for translate-then-compress (full eval)
-  pip install -q -e ".[model,eval,baselines,dev]"
+  # torch, transformers, vllm, datasets, pytest; llmlingua for translate-then-compress (full eval);
+  # py_vncorenlp (needs Java) for bertscore
+  pip install -q -e ".[seg,model,eval,baselines,dev]"
   python -m pytest -q tests | tail -1
   python - <<'EOF'
 import torch

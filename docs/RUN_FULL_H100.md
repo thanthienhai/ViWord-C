@@ -25,7 +25,7 @@ Giống smoke test (1 GPU ≥ 80 GB khuyến nghị, quyền đọc repo HF `tha
 - Khoảng **40 GB** đĩa trống ngoài phần của smoke (6 checkpoint XLM-R-large ~13 GB, các bản nén và kết quả).
 - Thư mục repo phải **giữ nguyên qua ba pha** (PVC/NFS), vì pha sau đọc checkpoint trong `runs/` và báo cáo do pha
   trước tạo ra.
-- Token Hugging Face được duyệt quyền mô hình gated `Viet-Mistral/Vistral-7B-Chat` (tokenizer cho `diagnose`).
+- Java ≥ 8 (VnCoreNLP cho stage `bertscore` ở pha 3). Mọi mô hình đều không gated.
 
 ## 0. Chuẩn bị (bỏ qua nếu dùng lại đúng thư mục đã chạy smoke)
 

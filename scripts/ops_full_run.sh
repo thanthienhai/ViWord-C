@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ViWord-C full run for the GPU ops team: one file, three parts. Needs 1x H100 80 GB, ~100 GB of disk,
-# internet (GitHub, Hugging Face, pip) and a Hugging Face token that can read the private repo
-# thanthienhai/viword-c-data (export HF_TOKEN=hf_xxx).
+# internet (GitHub, Hugging Face, pip), Java >= 8 (VnCoreNLP for bertscore in part3) and a Hugging Face
+# token that can read the private repo thanthienhai/viword-c-data (export HF_TOKEN=hf_xxx).
 #
 #   bash ops_full_run.sh part1   # ~5-6 h: environment, data check, pre-check of the new tasks,
 #                                #         diagnostics, phase 1 (gates on dev, labels, 6 encoders, ckpt_check)
@@ -118,6 +118,7 @@ diagnose() {  # G1 (CBR), G2 (negated ViNLI pairs), G5; needs the filled blind s
 part1() {
   [ -n "${HF_TOKEN:-}" ] || [ -s "${HF_HOME:-$HOME/.cache/huggingface}/token" ] \
     || die "no Hugging Face token: export HF_TOKEN=hf_xxx (read access to $HF_DATA_REPO)"
+  command -v java >/dev/null || die "no Java: install a JRE >= 8 (e.g. apt-get install -y openjdk-17-jre-headless)"
   if [ -e "$WORKDIR" ]; then  # rerun after an error: same code and environment, finished steps are skipped
     [ -f "$WORKDIR/$OUT/ops_part1.log" ] \
       || die "$WORKDIR exists but is not a part1 folder: delete it or set WORKDIR=<new folder>"
@@ -146,6 +147,8 @@ part1() {
   pip freeze > "$OUT/pip_freeze.txt"
   nvidia-smi > "$OUT/nvidia_smi.txt" 2>&1 || true
   run check_data check_data
+  # VnCoreNLP is only used by bertscore in part3: download its model and start it now, not after 12 h
+  run vncorenlp python -c "from viword.segment import VnCoreNLPSegmenter; print(VnCoreNLPSegmenter().segment('Hà Nội'))"
   # a failure in these two does not block phase 1; it is listed in $OUT/FAILED_STEPS
   # (diagnose runs again in phase 2, after training, and must pass there)
   try_run precheck precheck
@@ -190,13 +193,14 @@ update_code() {  # fast-forward to the commit with the π chosen in part2; log w
     [ -e "$OUT/pi_selected_part2/$f" ] && ! diff -u --strip-trailing-cr "$OUT/pi_selected_part2/$f" "config/$f" \
       && echo "NOTE: committed config/$f differs from the part2 output above"
   done
-  pip install -q -e ".[model,eval,baselines,dev]"   # in case the dependencies changed
+  pip install -q -e ".[seg,model,eval,baselines,dev]"   # in case the dependencies changed
 }
 
 part3() {
   [ -d "$WORKDIR/$OUT" ] || die "$WORKDIR/$OUT not found: run part1 first, in the same WORKDIR"
   cd "$WORKDIR"
   grep -q "Phase 2 done" "$OUT/full.log" || die "phase 2 did not finish: rerun part2"
+  command -v java >/dev/null || die "no Java: install a JRE >= 8 (bertscore needs VnCoreNLP)"
   exec > >(tee -a "$OUT/ops_part3.log") 2>&1
   log "part3: code $(git rev-parse --short HEAD), GPU $GPU"
   # shellcheck disable=SC1091

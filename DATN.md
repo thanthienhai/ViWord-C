@@ -123,7 +123,7 @@ Các bộ nén trích xuất hiện có không tính đến điều này:
 - **P3 — chi phí token không đồng đều.** Chi phí thật tính bằng token của **LLM đích T**. Số token của một từ
   tiếng Việt, c_T(w), dao động mạnh giữa các từ: âm tiết phổ biến chỉ tốn 1 token, âm tiết có dấu hiếm bị tách
   thành nhiều mảnh byte. Mức dao động này cũng khác nhau giữa các tokenizer (Llama-3.1, Qwen2.5, Gemma-2,
-  SeaLLM, Vistral).
+  SeaLLMs-v3, SeaLLM-7B-v2).
   - *Độ đo:* fertility (token/âm tiết), **CV_T** = hệ số biến thiên của c_T(w) trên kho văn bản, và tương quan
     giữa c_T(w) và số âm tiết của w.
   - *Lưu ý logic:* nếu mọi từ đắt như nhau (c_T tỉ lệ đều với độ dài), chọn theo điểm/chi phí **không** khác
@@ -472,10 +472,11 @@ từ tập train/validation, không trùng test.
 - **ViMMRC:** loại các bài thơ, hoặc báo cáo riêng.
 
 LLM đích (reader), zero-shot, decoding greedy: **Qwen2.5-7B-Instruct** (đa ngữ, reader chính) và
-**Vistral-7B-Chat** (chuyên tiếng Việt). Mọi quyết định trên dev (cổng, `ckpt_check`, π, α, MDE) chỉ dùng reader
-chính (`PRIMARY_READER`) rồi cố định; reader thứ hai chỉ chạy `eval` với `READER=...`. Vistral là repo gated và
-thẻ mô hình dùng system prompt: chạy với `READER_SYSTEM_PROMPT` và kiểm tra template đã render bằng
-`scripts/check_reader_template.py` trước khi đánh giá. Mỗi dòng kết quả báo cáo tỉ lệ câu trả lời không đọc được
+**SeaLLM-7B-v2** (Mistral-7B, từ vựng mở rộng cho các ngôn ngữ Đông Nam Á gồm tiếng Việt; transformer thuần
+ngoài họ Qwen). Vistral-7B-Chat là repo gated và không được cấp quyền, nên được thay bằng SeaLLM-7B-v2. Mọi
+quyết định trên dev (cổng, `ckpt_check`, π, α, MDE) chỉ dùng reader chính (`PRIMARY_READER`) rồi cố định; reader
+thứ hai chỉ chạy `eval` với `READER=...`. Kiểm tra template đã render bằng `scripts/check_reader_template.py`
+trước khi đánh giá. Mỗi dòng kết quả báo cáo tỉ lệ câu trả lời không đọc được
 (phải < 2%, `analyze.py` đánh dấu ⚠). Bản 8 trang thêm Llama-3.1-8B-Instruct, SeaLLMs-v3-7B và một reader thế
 hệ mới (Gemma 3, vocab rất lớn, hợp để kiểm tra H3; nếu dùng Qwen3 thì tắt chế độ thinking).
 
@@ -629,7 +630,7 @@ tests/            # test CPU
 | Mô hình | GPT-2-vi 124M / Qwen3-4B LoRA; PhoBERT (E6) | word classifier (XLM-R) |
 | Đóng góp | không chứng minh được; kết quả âm tính | ranh giới từ + hư từ + chi phí tokenizer đích |
 | Dữ liệu | VCC-Bench (tự xây, 5 tác vụ), XQuAD/TyDiQA | VietNews, ViNLI, ViMMRC, Belebele |
-| Reader | Qwen2.5-7B → Qwen3-8B | Qwen2.5 / Vistral (+ 3 reader ở bản 8 trang) |
+| Reader | Qwen2.5-7B → Qwen3-8B | Qwen2.5 / SeaLLM-7B-v2 (+ 3 reader ở bản 8 trang) |
 
 ViWord-C không dùng lại dữ liệu, nhãn hay mô hình của LACC; chỉ tái dùng khung đánh giá (bootstrap theo cụm,
 kiểm tra rò rỉ, các arm mốc). Mục này chỉ dùng trong luận văn (chương "Hướng tiếp cận ban đầu và bài học"),
