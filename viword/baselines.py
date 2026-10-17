@@ -273,6 +273,32 @@ def _search_rate(compress_at, budget: int, counter: TokenCounter, tolerance: flo
     return best
 
 
+class _LegacyKVModel:
+    """llmlingua 0.2.2 passes, indexes (``kv[0][0]``) and slices the KV cache as nested
+    ``[k, v]`` lists. transformers 5 accepts and returns only ``Cache`` objects, so
+    LLMLingua and LongLLMLingua crash. This wrapper converts on the way in and out and
+    delegates everything else to the model; with an older transformers it is a no-op."""
+
+    def __init__(self, model):
+        self._model = model
+
+    def __getattr__(self, name):
+        return getattr(self._model, name)
+
+    def __call__(self, *args, past_key_values=None, **kwargs):
+        if past_key_values is not None and not hasattr(past_key_values, "get_seq_length"):
+            from transformers import DynamicCache
+
+            legacy = tuple(tuple(kv) for kv in past_key_values)
+            past_key_values = (DynamicCache.from_legacy_cache(legacy)
+                               if hasattr(DynamicCache, "from_legacy_cache") else DynamicCache(legacy))
+        out = self._model(*args, past_key_values=past_key_values, **kwargs)
+        cache = getattr(out, "past_key_values", None)
+        if cache is not None and hasattr(cache, "layers"):  # transformers >= 5
+            out.past_key_values = [[layer.keys, layer.values] for layer in cache.layers]
+        return out
+
+
 class LLMLinguaOfficial:
     """Published LLMLingua / LLMLingua-2 / LongLLMLingua through the package.
 
@@ -297,6 +323,7 @@ class LLMLinguaOfficial:
             self.pc = PromptCompressor(model_name=self.LLMLINGUA2, use_llmlingua2=True, device_map=device)
         else:  # "llmlingua" or "longllmlingua": perplexity of a small causal LM
             self.pc = PromptCompressor(model_name=lm_name, device_map=device)
+            self.pc.model = _LegacyKVModel(self.pc.model)
 
     def _at_rate(self, context: Context, rate: float) -> str:
         if self.version == "llmlingua2":
