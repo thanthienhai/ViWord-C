@@ -109,6 +109,15 @@ def test_package_rate_search_never_exceeds_the_budget():
     assert 97 <= len(text) <= 100
 
 
+def test_package_rate_search_cuts_to_the_budget_when_the_method_cannot_compress():
+    from viword.baselines import _search_rate
+    counter = TokenCounter(CharTokenizer())
+    # LLMLingua returns a short context unchanged at every rate: no rate fits the budget
+    text = _search_rate(lambda rate: "một hai ba bốn năm sáu", 12, counter)
+    assert text == "một hai ba"  # leading whole words, 10 chars <= 12 < 15
+    assert _search_rate(lambda rate: "dài", 1, counter) == ""  # not even one word fits
+
+
 def test_greedy_gap_is_at_most_one_and_exact_on_easy_cases():
     from scripts.greedy_gap import objective_gap
     greedy, exact = objective_gap([1.0, 1.0, 1.0], [1, 1, 1], 2, alpha=0.0)

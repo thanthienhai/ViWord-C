@@ -256,8 +256,13 @@ def _search_rate(compress_at, budget: int, counter: TokenCounter, tolerance: flo
     target tokenizer lands in [budget·(1−tolerance), budget] (DATN §4.2). Returns the
     longest text found that does not exceed the budget. The upper bound is the budget
     itself, the same hard limit every mask-based method gets from `trim_to_budget`, so the
-    package baselines cannot gain up to 3% extra context."""
+    package baselines cannot gain up to 3% extra context.
+
+    Some methods cannot compress a short context at all (LLMLingua returns a 32-token ViNLI
+    premise unchanged at every rate), so no rate fits. Then the output at the lowest rate is
+    cut to its leading words that fit, rather than returning an empty context."""
     low, high, best, best_n = 0.01, 1.0, "", -1
+    text = ""
     for _ in range(steps):
         rate = (low + high) / 2
         text = compress_at(rate)
@@ -270,7 +275,20 @@ def _search_rate(compress_at, budget: int, counter: TokenCounter, tolerance: flo
             low = rate
         else:
             high = rate
-    return best
+    return best if best_n >= 0 else _leading_words(text, budget, counter)
+
+
+def _leading_words(text: str, budget: int, counter: TokenCounter) -> str:
+    """The longest prefix of `text`, in whole words, that fits in `budget` tokens."""
+    words = text.split()
+    low, high = 0, len(words)
+    while low < high:
+        mid = (low + high + 1) // 2
+        if counter.count(" ".join(words[:mid])) <= budget:
+            low = mid
+        else:
+            high = mid - 1
+    return " ".join(words[:low])
 
 
 class _LegacyKVModel:
