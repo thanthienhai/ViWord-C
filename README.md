@@ -105,8 +105,13 @@ tỉ lệ và báo cáo trung bình cùng độ lệch chuẩn giữa ba seed tr
 bootstrap phân tầng: lấy lại seed rồi lấy lại cụm trong seed đó; baseline không huấn luyện được dùng như tầng chung
 cho cả ba seed. Nếu thiếu một seed, phân tích dừng thay vì kết luận từ tập chưa đủ.
 
-LLM thầy mặc định là `icmodel/icom-model-llm-ic-v3.8-27b` tại `http://172.16.9.11:30048/v1` (vLLM, API tương thích
-OpenAI). Thầy chỉ cần trả về văn bản; không dùng logit.
+LLM thầy mặc định là iCOMM `icmodel/icom-model-llm-ic-v3.8-27b` tại `http://172.16.9.11:30049/v1` (vLLM, API
+tương thích OpenAI, chỉ gọi được trong mạng nội bộ). Thầy chỉ cần trả về văn bản; không dùng logit. Có thể đổi thầy
+qua `.env` (chép từ `.env.example`): `TEACHER_URL`, `TEACHER_MODEL` và key `TEACHER_API_KEY_1..N` (nhiều key thì các
+lượt gọi được chia đều; key trong `.env` chỉ gửi tới `TEACHER_URL` trong `.env`). Thinking luôn bị tắt; với GLM-5.2
+cần tắt, vì khi bật model tiêu `max_tokens` cho suy luận trước và có thể trả về rỗng. Mỗi dòng đầu ra ghi tên thầy;
+`teacher_compress.py` từ chối ghi tiếp vào file có dòng của thầy khác hoặc dòng chưa ghi tên thầy (các file iCOMM
+sinh trước khi có trường này). Đổi thầy thì phải chạy lại G4 (`teacher_check teacher_gate`) trước khi chưng cất.
 
 ## Dữ liệu
 

@@ -35,19 +35,29 @@ def teacher_prompt(text: str, rate: float) -> str:
     return TEACHER_PROMPT.format(n=n, target=target, upper=round(target * 1.1), text=text)
 
 
+class TruncatedResponse(RuntimeError):
+    """The teacher hit `max_tokens` before finishing. A cut-off compression is short, so it
+    would pass for a good one at a lower rate; it is raised instead of returned."""
+
+
 def teacher_compress(client, model: str, text: str, rate: float, max_tokens: int = 4096) -> str:
     """One deletion-only compression by the teacher through an OpenAI-compatible chat API
-    (a `vllm serve` endpoint or OpenAI). Only the output text is used, no logits.
-    Greedy decoding; thinking mode is disabled (vLLM `chat_template_kwargs`, ignored by
-    servers that do not support it) and any leftover <think> block is removed."""
+    (a `vllm serve` endpoint, OpenAI, or FPT token-api with GLM-5.2). Only the output text
+    is used, no logits. Greedy decoding; thinking mode is disabled, both the vLLM way
+    (`chat_template_kwargs`) and the GLM way (`thinking`), since each server ignores the other
+    field. With thinking on, GLM-5.2 spends `max_tokens` on reasoning first and can return an
+    empty answer. Any leftover <think> block is removed."""
     response = client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": teacher_prompt(text, rate)}],
         temperature=0.0,
         max_tokens=max_tokens,
-        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+        extra_body={"chat_template_kwargs": {"enable_thinking": False}, "thinking": {"type": "disabled"}},
     )
-    content = response.choices[0].message.content or ""
+    choice = response.choices[0]
+    if choice.finish_reason == "length":
+        raise TruncatedResponse(f"finish_reason=length at max_tokens={max_tokens}")
+    content = choice.message.content or ""
     return re.sub(r"<think>.*?</think>", "", content, flags=re.S).strip()
 
 

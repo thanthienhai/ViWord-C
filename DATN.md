@@ -7,9 +7,9 @@
 > **Quy mô:** ~10 tuần, nhắm hội nghị nhỏ/khu vực hoặc tạp chí tầm trung.
 > **Tài nguyên:** cụm H100 80GB (đã dùng cho LACC). Encoder và reader 7B chỉ cần 1 GPU; LLM thầy thực dùng là
 > **iCOMM `icmodel/icom-model-llm-ic-v3.8-27b` (27B)**, được gọi qua endpoint vLLM tương thích OpenAI
-> (`http://172.16.9.11:30048/v1`). Đề cương ban đầu dự kiến Qwen2.5-72B-Instruct, nhưng pipeline thực tế đổi sang
-> endpoint iCOMM 27B đang được cung cấp để sinh dữ liệu; đây là thay đổi về mô hình/hạ tầng, không phải thay đổi
-> phương pháp. G4 và bước chưng cất phải dùng cùng model này.
+> (`http://172.16.9.11:30049/v1`; trước đây là cổng 30048). Đề cương ban đầu dự kiến Qwen2.5-72B-Instruct,
+> nhưng pipeline thực tế đổi sang endpoint iCOMM 27B đang được cung cấp để sinh dữ liệu; đây là thay đổi về mô
+> hình/hạ tầng, không phải thay đổi phương pháp. G4 và bước chưng cất phải dùng cùng model này.
 > **Quan hệ với pilot LACC** trước đó: xem §6.
 
 ---

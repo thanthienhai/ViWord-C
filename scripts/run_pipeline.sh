@@ -18,7 +18,16 @@ cd "$(dirname "$0")/.."
 export PYTHONPATH=. PYTHONIOENCODING=utf-8
 
 # ---------------------------------------------------------------------------- settings
-TEACHER_URL=${TEACHER_URL:-http://172.16.9.11:30048/v1}
+# TEACHER_URL/TEACHER_MODEL from .env unless already set; read, not sourced, so .env runs nothing.
+# The API keys stay in .env and are read by scripts/teacher_compress.py, not passed on the command line.
+if [ -f .env ]; then
+  while IFS='=' read -r name value; do
+    case "$name" in TEACHER_URL|TEACHER_MODEL|TEACHER_WORKERS)
+      [ -z "${!name:-}" ] && printf -v "$name" '%s' "${value%$'\r'}" ;;
+    esac
+  done < .env
+fi
+TEACHER_URL=${TEACHER_URL:-http://172.16.9.11:30049/v1}
 TEACHER_MODEL=${TEACHER_MODEL:-icmodel/icom-model-llm-ic-v3.8-27b}
 TEACHER_WORKERS=${TEACHER_WORKERS:-16}
 SEGMENTER=${SEGMENTER:-vncorenlp}
