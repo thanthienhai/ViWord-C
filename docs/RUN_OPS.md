@@ -38,12 +38,15 @@ Lý do phải dừng giữa các phần:
 Đội vận hành không làm các việc dưới đây, chỉ cần chờ chủ đề tài báo đã xong. Nếu chạy khi chưa xong, script sẽ dừng
 với thông báo ở mục 5.
 
-| Trước phần | Chủ đề tài đã làm | Nếu chưa làm |
-|---|---|---|
-| 1 | đẩy code lên GitHub `main`, đẩy dữ liệu mới lên Hugging Face (khớp `data/SHA256SUMS`) | `check_data` dừng |
-| 1 | gán nhãn và commit hai phiếu mù `data/annot/protect_sheet.jsonl`, `probe_sheet.jsonl` | phần 1: `diagnose` lỗi (không chặn); phần 2: dừng |
-| 3 | commit `config/pi_selected.{json,env}` (lấy từ file `.tgz` của phần 2) | `update_code` dừng |
-| 3 | sinh cận trên của thầy trên test (`results/teacher_test`), đẩy lên Hugging Face, cập nhật `data/SHA256SUMS` | `check_data_part3` hoặc `eval` dừng |
+| Trước phần | Chủ đề tài đã làm | Nếu chưa làm | Trạng thái 20/10 |
+|---|---|---|---|
+| 1 | đẩy code lên GitHub `main`, đẩy dữ liệu mới lên Hugging Face (khớp `data/SHA256SUMS`) | `check_data` dừng | **xong** (dữ liệu HF `e47ee9a5`, 57/57 file khớp) |
+| 1 | gán nhãn và commit hai phiếu mù `data/annot/protect_sheet.jsonl`, `probe_sheet.jsonl` | phần 1: `diagnose` lỗi (không chặn); phần 2: dừng | **xong** (`protect_eval` hợp lệ, G6 đạt) |
+| 3 | commit `config/pi_selected.{json,env}` (lấy từ file `.tgz` của phần 2) | `update_code` dừng | chờ phần 2 |
+| 3 | sinh cận trên của thầy trên test (`results/teacher_test`), đẩy lên Hugging Face, cập nhật `data/SHA256SUMS` | `check_data_part3` hoặc `eval` dừng | **xong** (7 tập × 300 mẫu) |
+
+Đến 20/10, phần 1 và phần 2 không còn bị chặn; phần 3 chỉ còn chờ chủ đề tài commit π sau phần 2. Các bước trên đã
+chạy thử trên 2× T4 (tải và kiểm tra dữ liệu HF, `protect_eval`, cận trên của thầy trên cả 7 tập test).
 
 ## 1. Yêu cầu
 
@@ -242,13 +245,19 @@ sao cho `sha256sum -c data/SHA256SUMS` đúng trên bản Hugging Face. Gán nh�
 mkdir -p config && cp <giải nén>/results/full/pi_selected.{json,env} config/
 git add config/pi_selected.json config/pi_selected.env && git commit -m "Select π on dev" && git push
 # 2. cận trên của thầy trên test (cần gọi được TEACHER_URL và gói openai: pip install -e ".[teacher]"; không cần GPU)
-bash scripts/run_pipeline.sh teacher_test
-sha256sum results/teacher_test/*.jsonl >> data/SHA256SUMS      # chỉ một lần; chạy lại thì xoá các dòng cũ trước
+#    ĐÃ XONG 19/10 (iCOMM, cổng 30049); chỉ chạy lại nếu đổi thầy hoặc tập test
+bash scripts/run_pipeline.sh teacher_test     # chạy lại cùng lệnh sẽ tiếp tục từ chỗ dở
+sed -i '\|results/teacher_test/|d' data/SHA256SUMS                  # thay, không nối thêm, các dòng teacher_test
+sha256sum results/teacher_test/*.jsonl >> data/SHA256SUMS
 git add data/SHA256SUMS && git commit -m "Checksums for teacher_test" && git push
 python scripts/hf_data.py push --repo thanthienhai/viword-c-data --message "teacher_test"
 ```
 
-Có thể làm bước 2 ngay từ trước phần 1, vì nó không phụ thuộc kết quả nào trên GPU. Bản 8 trang (H3) còn cần
+Có thể làm bước 2 ngay từ trước phần 1, vì nó không phụ thuộc kết quả nào trên GPU. Thầy mặc định là iCOMM
+`icmodel/icom-model-llm-ic-v3.8-27b` tại `http://172.16.9.11:30049/v1` (cổng cũ 30048 không còn chạy), chỉ gọi được
+trong mạng nội bộ. `TEACHER_MAX_TOKENS` mặc định 8192: iCOMM chép gần nguyên các danh sách từ của OneRuler `cwe`
+(khoảng 4.800 token), nên ở 4096 khoảng 40% lượt OneRuler bị cắt và báo lỗi. Tập dài nhất (OneRuler) mất khoảng 2,5
+giờ vì bộ nhớ đệm KV của máy chủ iCOMM chỉ đủ khoảng 13 lượt cùng lúc; gửi quá 16 lượt song song không nhanh hơn. Bản 8 trang (H3) còn cần
 `select_alpha` trên dev và commit `config/alpha_selected.*` trước phần 3; không có hai file này thì `eval` bỏ qua các
 dòng H3. Reader thứ hai (SeaLLM-7B-v2) không nằm trong ba phần này: chạy riêng `eval` với `READER=SeaLLMs/SeaLLM-7B-v2`
 sau khi đã kiểm tra chat template (`scripts/check_reader_template.py`).

@@ -22,7 +22,7 @@ export PYTHONPATH=. PYTHONIOENCODING=utf-8
 # The API keys stay in .env and are read by scripts/teacher_compress.py, not passed on the command line.
 if [ -f .env ]; then
   while IFS='=' read -r name value; do
-    case "$name" in TEACHER_URL|TEACHER_MODEL|TEACHER_WORKERS)
+    case "$name" in TEACHER_URL|TEACHER_MODEL|TEACHER_WORKERS|TEACHER_MAX_TOKENS)
       [ -z "${!name:-}" ] && printf -v "$name" '%s' "${value%$'\r'}" ;;
     esac
   done < .env
@@ -30,6 +30,9 @@ fi
 TEACHER_URL=${TEACHER_URL:-http://172.16.9.11:30049/v1}
 TEACHER_MODEL=${TEACHER_MODEL:-icmodel/icom-model-llm-ic-v3.8-27b}
 TEACHER_WORKERS=${TEACHER_WORKERS:-16}
+# output cap per teacher call; a call that reaches it fails instead of keeping a cut-off text. iCOMM copies the
+# OneRuler cwe word lists almost whole (~4.8k tokens), so 4096 is too low for teacher_test
+TEACHER_MAX_TOKENS=${TEACHER_MAX_TOKENS:-8192}
 SEGMENTER=${SEGMENTER:-vncorenlp}
 SEG_WORKERS=${SEG_WORKERS:-16}              # parallel segmenter processes
 READER=${READER:-Qwen/Qwen2.5-7B-Instruct}
@@ -251,7 +254,7 @@ stage_teacher_check() {  # gate G4: teacher compressions of dev contexts -> `pre
     log "teacher on $stem (200)"
     python scripts/teacher_compress.py --input "data/tasks/$stem.jsonl" --field "$field" --limit 200 \
       --rates 0.5 0.333 0.2 --output "results/teacher_dev/$stem.jsonl" \
-      --base-url "$TEACHER_URL" --model "$TEACHER_MODEL" --workers "$TEACHER_WORKERS"
+      --base-url "$TEACHER_URL" --model "$TEACHER_MODEL" --workers "$TEACHER_WORKERS" --max-tokens "$TEACHER_MAX_TOKENS"
   done
 }
 
@@ -307,7 +310,7 @@ stage_teacher() {
   log "teacher on distillation paragraphs"
   python scripts/teacher_compress.py --input data/distill/paragraphs_clean.jsonl --field text \
     --rates 0.5 0.25 --output data/distill/teacher.jsonl \
-    --base-url "$TEACHER_URL" --model "$TEACHER_MODEL" --workers "$TEACHER_WORKERS"
+    --base-url "$TEACHER_URL" --model "$TEACHER_MODEL" --workers "$TEACHER_WORKERS" --max-tokens "$TEACHER_MAX_TOKENS"
 }
 
 stage_distill() {
@@ -482,7 +485,7 @@ stage_teacher_test() {  # DATN §4.2: teacher upper bound on a held-out test sub
     log "teacher upper bound on $stem ($TEACHER_TEST_LIMIT)"
     python scripts/teacher_compress.py --input "data/tasks/$stem.jsonl" --field "$field" \
       --limit "$TEACHER_TEST_LIMIT" --rates $RATIOS --output "results/teacher_test/$stem.jsonl" \
-      --base-url "$TEACHER_URL" --model "$TEACHER_MODEL" --workers "$TEACHER_WORKERS"
+      --base-url "$TEACHER_URL" --model "$TEACHER_MODEL" --workers "$TEACHER_WORKERS" --max-tokens "$TEACHER_MAX_TOKENS"
   done
 }
 
