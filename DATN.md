@@ -336,6 +336,17 @@ cảnh riêng. Các từ còn lại của bảng không có ràng buộc POS. P 
   phủ định nên phiếu lấy premise từ cả ViNLI dev và train (không dùng test). `scripts/evaluate_probe.py` yêu cầu ≥ 50
   premise khác nhau bị probe sửa; G6 đạt khi precision ≥ 95% trên nhóm này; recall tính từ nhóm không bị sửa. Hai mẫu
   *không kích* và *không lâu* được kiểm thử như ngoại lệ không phải phủ định.
+- **Cách gán hai phiếu:** nhãn do LLM (Claude Opus 5.5) gợi ý trên phiếu mù, không chạy bộ phát hiện; Than Ngoc Thien
+  duyệt toàn bộ 300 mục và chấp nhận không sửa (`annotator` = `claude-opus-5-5 + Than Ngoc Thien`). Vì người duyệt
+  thấy nhãn gợi ý, kết quả có thể nghiêng theo nhãn đó (anchoring); đây là giới hạn cần nêu trong bài. Quy ước khi
+  bảng trên chưa nói rõ: *một* chỉ tính là số khi thật sự đếm (không tính *một* làm mạo từ); thực thể tên gồm mọi từ
+  của tên thật, kể cả tên NER bỏ sót; *nồi chiên không dầu* là tên sản phẩm, không phải phủ định.
+- **Kết quả trên hai phiếu** (`results/protect_eval.md`, `results/probe_negation_eval.md`):
+  - P: F1 T1/T2/T3 = 0.901/0.955/0.903 (precision 0.957/0.934/0.966, recall 0.852/0.977/0.848). 141/142 từ T1 bị
+    bỏ sót là tên riêng mà NER VnCoreNLP không gán (*Facebook, Quốc hội, IELTS*, tên nghị định), nên recall T1 bị
+    giới hạn bởi NER; 28/37 nhận nhầm T1 là *một* làm mạo từ (luật coi mọi POS `M` là số).
+  - G6: precision 0.960 (48/50), recall 1.000 → **đạt**, nhưng biên chỉ một câu: hai lỗi đều là *nồi chiên không
+    dầu*, thêm một lỗi nữa là 0.94 và trượt.
 - Biến thể:
   - `none`;
   - `soft`: s(w) = p_keep(w) + δ·1[w ∈ P], δ ∈ {0.1, 0.2, 0.3, 0.5} (chỉ dò trên dev);
