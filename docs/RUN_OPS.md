@@ -244,20 +244,10 @@ sao cho `sha256sum -c data/SHA256SUMS` đúng trên bản Hugging Face. Gán nh�
 # 1. π: lấy hai file từ viword_part2_*.tgz, xem pi_selection.md, rồi commit đúng nguyên văn
 mkdir -p config && cp <giải nén>/results/full/pi_selected.{json,env} config/
 git add config/pi_selected.json config/pi_selected.env && git commit -m "Select π on dev" && git push
-# 2. cận trên của thầy trên test (cần gọi được TEACHER_URL và gói openai: pip install -e ".[teacher]"; không cần GPU)
-#    ĐÃ XONG 19/10 (iCOMM, cổng 30049); chỉ chạy lại nếu đổi thầy hoặc tập test
-bash scripts/run_pipeline.sh teacher_test     # chạy lại cùng lệnh sẽ tiếp tục từ chỗ dở
-sed -i '\|results/teacher_test/|d' data/SHA256SUMS                  # thay, không nối thêm, các dòng teacher_test
-sha256sum results/teacher_test/*.jsonl >> data/SHA256SUMS
-git add data/SHA256SUMS && git commit -m "Checksums for teacher_test" && git push
-python scripts/hf_data.py push --repo thanthienhai/viword-c-data --message "teacher_test"
+# 2. cận trên của thầy trên test (results/teacher_test): đã xong 19/10, đã có trên Hugging Face
 ```
 
-Có thể làm bước 2 ngay từ trước phần 1, vì nó không phụ thuộc kết quả nào trên GPU. Thầy mặc định là iCOMM
-`icmodel/icom-model-llm-ic-v3.8-27b` tại `http://172.16.9.11:30049/v1` (cổng cũ 30048 không còn chạy), chỉ gọi được
-trong mạng nội bộ. `TEACHER_MAX_TOKENS` mặc định 8192: iCOMM chép gần nguyên các danh sách từ của OneRuler `cwe`
-(khoảng 4.800 token), nên ở 4096 khoảng 40% lượt OneRuler bị cắt và báo lỗi. Tập dài nhất (OneRuler) mất khoảng 2,5
-giờ vì bộ nhớ đệm KV của máy chủ iCOMM chỉ đủ khoảng 13 lượt cùng lúc; gửi quá 16 lượt song song không nhanh hơn. Bản 8 trang (H3) còn cần
+Bản 8 trang (H3) còn cần
 `select_alpha` trên dev và commit `config/alpha_selected.*` trước phần 3; không có hai file này thì `eval` bỏ qua các
 dòng H3. Reader thứ hai (SeaLLM-7B-v2) không nằm trong ba phần này: chạy riêng `eval` với `READER=SeaLLMs/SeaLLM-7B-v2`
 sau khi đã kiểm tra chat template (`scripts/check_reader_template.py`).

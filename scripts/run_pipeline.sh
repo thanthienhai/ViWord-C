@@ -30,8 +30,8 @@ fi
 TEACHER_URL=${TEACHER_URL:-http://172.16.9.11:30049/v1}
 TEACHER_MODEL=${TEACHER_MODEL:-icmodel/icom-model-llm-ic-v3.8-27b}
 TEACHER_WORKERS=${TEACHER_WORKERS:-16}
-# output cap per teacher call; a call that reaches it fails instead of keeping a cut-off text. iCOMM copies the
-# OneRuler cwe word lists almost whole (~4.8k tokens), so 4096 is too low for teacher_test
+# output cap per teacher call; a call that reaches it fails instead of keeping a cut-off text
+# (the OneRuler cwe word lists come back almost uncompressed, ~4.8k tokens)
 TEACHER_MAX_TOKENS=${TEACHER_MAX_TOKENS:-8192}
 SEGMENTER=${SEGMENTER:-vncorenlp}
 SEG_WORKERS=${SEG_WORKERS:-16}              # parallel segmenter processes
