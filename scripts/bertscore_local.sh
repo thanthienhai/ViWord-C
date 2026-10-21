@@ -5,7 +5,7 @@
 #   python scripts/hf_results.py pull --match part4              # or part3; into results/from_gpu/
 #   bash scripts/bertscore_local.sh results/from_gpu/viword_part4_<date>.tgz   # or an unpacked folder
 #
-# Needs Java >= 8, the [seg,eval] extras and data/tasks/vietnews_test.jsonl matching data/SHA256SUMS;
+# Needs Java >= 8, the [seg,eval] extras and data/tasks/vietnews_test.jsonl (VIETNEWS) matching data/SHA256SUMS;
 # a GPU is optional (PhoBERT-base). A .tgz must come with its .sha256. Writes
 # results/bertscore/<rows>.{jsonl,md} and env.txt (what scored them). The part4 package holds the rows
 # of both readers (part3 only those of the primary reader).
@@ -15,11 +15,12 @@ cd "$(dirname "$0")/.."
 SRC=${1:?usage: bash scripts/bertscore_local.sh <viword_part3_*.tgz | unpacked folder>}
 PYTHON=${PYTHON:-python}
 OUT=results/bertscore
+VIETNEWS=${VIETNEWS:-data/tasks/vietnews_test.jsonl}   # references; data/tasks/vietnews_dev.jsonl for a dev smoke
 export PYTHONPATH=. PYTHONIOENCODING=utf-8 TOKENIZERS_PARALLELISM=false
 
 command -v java >/dev/null || { echo "no Java: VnCoreNLP needs a JRE >= 8" >&2; exit 1; }
-grep "  data/tasks/vietnews_test.jsonl$" data/SHA256SUMS | sha256sum --quiet -c \
-  || { echo "data/tasks/vietnews_test.jsonl differs from data/SHA256SUMS: pull the HF data" >&2; exit 1; }
+grep "  $VIETNEWS$" data/SHA256SUMS | sha256sum --quiet -c \
+  || { echo "$VIETNEWS differs from data/SHA256SUMS: pull the HF data" >&2; exit 1; }
 
 if [ -d "$SRC" ]; then
   root=$SRC
@@ -54,7 +55,7 @@ for rows in "$eval_dir"/vietnews_*.jsonl; do
   [ -e "$rows" ] || continue
   out="$OUT/$(basename "$rows")"
   echo -e "\n=== BERTScore for $rows ($(date '+%F %T'))"
-  "$PYTHON" scripts/bertscore.py --rows "$rows" --data data/tasks/vietnews_test.jsonl --out "$out" \
+  "$PYTHON" scripts/bertscore.py --rows "$rows" --data "$VIETNEWS" --out "$out" \
     | tee "${out%.jsonl}.md"
   n=$((n + 1))
 done

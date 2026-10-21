@@ -68,7 +68,8 @@ def build_prompt(example: Example, context: str) -> str:
 
 
 # nli/mc: 32, not 8, so that a reader opening with a sentence (SeaLLM-7B-v2) still reaches its label; decoding is
-# greedy and parse_prediction takes the first label, so an answer readable within 8 tokens is unchanged
+# greedy and parse_prediction takes the first label, so an answer readable within 8 tokens is unchanged, except a
+# letter read from a word cut by the 8th token ("C" of "Câu A: ...", seen once in the 2026-10-21 Kaggle smoke)
 MAX_NEW_TOKENS = {"summ": 256, "nli": 32, "mc": 32, "qa": 32, "math": 320, "ruler": 64}
 
 

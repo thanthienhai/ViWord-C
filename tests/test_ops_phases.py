@@ -50,7 +50,7 @@ def test_the_gpu_machine_needs_no_java():
     assert "command -v java" not in OPS
     assert 'cp results/eval/*.jsonl "$OUT/eval"/' in _body(FULL, "phase3")
     local = (SCRIPTS / "bertscore_local.sh").read_text(encoding="utf-8")
-    assert "scripts/bertscore.py" in local and "data/tasks/vietnews_test.jsonl" in local
+    assert "scripts/bertscore.py" in local and "VIETNEWS=${VIETNEWS:-data/tasks/vietnews_test.jsonl}" in local
 
 
 def test_every_package_has_a_checksum_and_the_second_reader_comes_back():
