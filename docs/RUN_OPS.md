@@ -24,7 +24,8 @@ Lý do phải dừng giữa các phần:
 **Khác với bản hướng dẫn trước (hai phần):**
 - Có thêm **phần 3**. Phần 2 cũ (nén + đọc trên test) nay là phần 3, chạy sau khi chủ đề tài commit π.
 - Phần 2 mới chỉ chạy trên dev: chẩn đoán, chọn π, tính MDE.
-- Máy **không cần Java**: BERTScore (cần VnCoreNLP) do chủ đề tài chạy trên máy riêng sau phần 3. Reader thứ hai là `SeaLLMs/SeaLLM-7B-v2` (không gated) thay cho Vistral, nên token chỉ
+- Máy **không cần Java**: BERTScore (cần VnCoreNLP) do chủ đề tài chạy trên máy riêng sau phần 3. Đội vận hành
+  **không chạy `scripts/bertscore_local.sh`**, kể cả để chạy thử, và không cài Java trên máy GPU. Reader thứ hai là `SeaLLMs/SeaLLM-7B-v2` (không gated) thay cho Vistral, nên token chỉ
   cần quyền đọc repo dữ liệu.
 - **Tải lại `ops_full_run.sh` trước mỗi phần.** Bản cũ không có `part3` và không kiểm tra dữ liệu mới.
 - Hai cổng `ckpt_check` (phần 1) và `mde` (phần 2) có thể dừng với kết quả `FAIL`. Đó là kết quả nghiên cứu, không phải
@@ -179,6 +180,9 @@ bash ops_full_run.sh part4
 
 **Thành công** khi dòng cuối của `ops_part4.log` là `Uploaded: ...` (hoặc `Send back: ...`, mục 4c).
 
+Việc của đội vận hành dừng ở đây. BERTScore (`scripts/bertscore_local.sh`) do chủ đề tài chạy trên máy riêng từ gói
+đã gửi; đội vận hành không chạy, không chạy thử và không báo lỗi của script này.
+
 ## 4c. Khi không đẩy được lên Hugging Face
 
 Không có `HF_RESULTS_TOKEN`, hoặc upload lỗi (dòng `upload to ... failed`), thì dòng cuối là
@@ -286,7 +290,7 @@ python scripts/hf_results.py verify <file>.tgz     # gói gửi tay, cùng file 
 ```
 
 **Sau phần 4** (hoặc sau phần 3 nếu chỉ cần reader chính). BERTScore (PhoBERT, văn bản tách từ bằng VnCoreNLP) cho
-VietNews, trên máy có Java ≥ 8 và các gói `[seg,eval]`; GPU không bắt buộc. Gói phần 4 chứa kết quả của cả hai reader:
+VietNews, trên máy của chủ đề tài (không phải máy GPU) có Java ≥ 8 và các gói `[seg,eval]`; GPU không bắt buộc. Gói phần 4 chứa kết quả của cả hai reader:
 
 ```bash
 python scripts/hf_results.py pull --match part4

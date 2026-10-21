@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # BERTScore (PhoBERT) for the VietNews test rows of part 3, on the project owner's machine (DATN §4.1).
-# The GPU machine does not run it, so it needs no Java: VnCoreNLP segments the summaries here.
+# The GPU machine does not run it, so it needs no Java: VnCoreNLP segments the summaries here. The ops team does not
+# run it, not even as a smoke test (docs/RUN_OPS.md).
 #
 #   python scripts/hf_results.py pull --match part4              # or part3; into results/from_gpu/
 #   bash scripts/bertscore_local.sh results/from_gpu/viword_part4_<date>.tgz   # or an unpacked folder
