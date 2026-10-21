@@ -67,7 +67,9 @@ def build_prompt(example: Example, context: str) -> str:
             f"Đoạn văn: {context}\n\nCâu hỏi: {example.question}\n{options}\n\nĐáp án:")
 
 
-MAX_NEW_TOKENS = {"summ": 256, "nli": 8, "mc": 8, "qa": 32, "math": 320, "ruler": 64}
+# nli/mc: 32, not 8, so that a reader opening with a sentence (SeaLLM-7B-v2) still reaches its label; decoding is
+# greedy and parse_prediction takes the first label, so an answer readable within 8 tokens is unchanged
+MAX_NEW_TOKENS = {"summ": 256, "nli": 32, "mc": 32, "qa": 32, "math": 320, "ruler": 64}
 
 
 def parse_prediction(task: str, text: str) -> str:

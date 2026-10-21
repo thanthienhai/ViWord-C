@@ -143,3 +143,15 @@ def test_reader_budget_excludes_prompt_and_marks_deviation():
     assert budget_deviates(1.051)
     assert tokens_per_budget(0, 0) is None
 
+
+
+def test_a_longer_output_budget_keeps_answers_read_within_the_shorter_one():
+    from viword.eval import MAX_NEW_TOKENS
+    assert MAX_NEW_TOKENS["nli"] == MAX_NEW_TOKENS["mc"] == 32  # the same for every reader and method
+    # greedy decoding only appends text: the first label found in the short answer is still the one read
+    for task, short, longer in [("nli", "neutral", "neutral. Tuy nhiên, không có entailment"),
+                                ("mc", "B", "B. Vì đoạn văn nói A sai")]:
+        assert parse_prediction(task, short) == parse_prediction(task, longer)
+    # an opening sentence that used to exhaust 8 tokens now reaches the label
+    assert parse_prediction("nli", "Quan hệ giữa tiền đề và giả") == ""
+    assert parse_prediction("nli", "Quan hệ giữa tiền đề và giả thuyết là: entailment") == "entailment"

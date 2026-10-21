@@ -45,7 +45,7 @@ step_setup() {
   source "$VENV/bin/activate"
   pip install -q --upgrade pip
   # torch, transformers, vllm, datasets, pytest; llmlingua for translate-then-compress (full eval);
-  # py_vncorenlp (needs Java) for bertscore
+  # py_vncorenlp for the segmenter tests (bertscore, which needs Java, runs on the project owner's machine)
   pip install -q -e ".[seg,model,eval,baselines,dev]"
   python -m pytest -q tests | tail -1
   python - <<'EOF'

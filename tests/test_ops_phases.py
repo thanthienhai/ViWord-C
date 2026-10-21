@@ -42,3 +42,21 @@ def test_gate_reports_are_collected_on_failure():
     run_stages = _body(FULL, "run_stages")
     failed = run_stages[:run_stages.index("exit 1")]
     assert '"collect_$name"' in failed
+
+
+def test_the_gpu_machine_needs_no_java():
+    # BERTScore (VnCoreNLP needs Java) runs on the project owner's machine on the eval rows of part 3
+    assert "bertscore" not in _body(FULL, "phase3") and "vncorenlp" not in _body(OPS, "part1")
+    assert "command -v java" not in OPS
+    assert 'cp results/eval/*.jsonl "$OUT/eval"/' in _body(FULL, "phase3")
+    local = (SCRIPTS / "bertscore_local.sh").read_text(encoding="utf-8")
+    assert "scripts/bertscore.py" in local and "data/tasks/vietnews_test.jsonl" in local
+
+
+def test_every_package_has_a_checksum_and_the_second_reader_comes_back():
+    pack, part4 = _body(OPS, "pack"), _body(OPS, "part4")
+    assert 'sha256sum "$(basename "$tgz")" > "$(basename "$tgz").sha256"' in pack
+    assert "scripts/hf_results.py\" push" in pack and "Send back:" in pack
+    assert 'grep -q "Phase 3 done"' in part4 and "update_code" not in part4  # same code and π as part3
+    assert 'env READER="$READER2" bash scripts/run_pipeline.sh eval' in part4
+    assert part4.index("run_pipeline.sh eval") < part4.index('"$OUT/eval"') < part4.index("pack part4")

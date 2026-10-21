@@ -22,10 +22,12 @@ class TokenCounter:
         return len(self.tokenizer.encode(text, add_special_tokens=False)) if text else 0
 
     def unit_cost(self, text: str, is_punct: bool) -> int:
-        """c_T(w): tokens of " " + w (punctuation is counted without the leading space)."""
+        """c_T(w): tokens w adds after a preceding word ("x" + " " + w minus "x"; punctuation without
+        the space). Counting " " + w alone costs an extra "▁" with SentencePiece tokenizers that add a
+        dummy prefix (SeaLLM-7B-v2)."""
         key = text if is_punct else " " + text
         if key not in self._cache:
-            self._cache[key] = max(1, self.count(key))
+            self._cache[key] = max(1, self.count("x" + key) - self.count("x"))
         return self._cache[key]
 
 

@@ -77,6 +77,8 @@ bash scripts/run_pipeline.sh train ckpt_check select_pi mde    # kiểm tra chec
 bash scripts/run_pipeline.sh select_alpha                        # chỉ bản 8 trang: chọn α (H3) trên dev
 bash scripts/run_pipeline.sh teacher_test                        # cận trên thầy trên 300 mẫu test/tác vụ
 bash scripts/run_pipeline.sh eval bertscore analyze              # sau khi config + teacher upper bound đã sẵn sàng
+python scripts/hf_results.py pull --match part4                  # gói kết quả của cụm (repo HF private), kiểm tra sha256
+bash scripts/bertscore_local.sh results/from_gpu/viword_part4_<ngày>.tgz   # BERTScore trên máy có Java, cả hai reader
 READER=SeaLLMs/SeaLLM-7B-v2 bash scripts/run_pipeline.sh eval  # reader thứ hai
 bash scripts/run_pipeline.sh teacher_check           # thầy nén 200 mẫu dev mỗi tác vụ -> cận trên / cổng G4
 bash scripts/run_pipeline.sh teacher_gate gate_eval  # cần reader: quyết định G4, rồi G1/G2/G3 trên tập dev
@@ -290,7 +292,8 @@ tham chiếu mô tả, không dùng để chọn π.
   `ppl_sent` **không** giống hệt `lacc_sentence` của LACC: LACC dùng câu hỏi, luôn giữ câu đầu và cuối, và được vượt
   ngân sách (chi tiết ở DATN §4.2).
 - **ROUGE:** tự cài trên âm tiết, vì `rouge_score` bỏ mọi ký tự ngoài ASCII. **BERTScore** (PhoBERT-base, lớp 10,
-  văn bản tách từ bằng VnCoreNLP) chạy sau `eval` bằng stage `bertscore`, ghi vào `results/bertscore/`.
+  văn bản tách từ bằng VnCoreNLP) chạy sau `eval` bằng stage `bertscore`, ghi vào `results/bertscore/`. Máy GPU của lần chạy chính thức không có
+  Java, nên stage này chạy trên máy chủ đề tài: `scripts/bertscore_local.sh` lấy các dòng VietNews từ gói phần 3.
 - **Reader thứ hai:** cổng, `ckpt_check`, π, α và MDE chỉ dùng `PRIMARY_READER` (mặc định Qwen2.5-7B); các stage đó
   dừng nếu `READER` khác. Reader thứ hai là SeaLLM-7B-v2 (Vistral-7B-Chat gated, không được cấp quyền); kiểm tra
   template bằng `scripts/check_reader_template.py`, không cần system prompt. `analyze.py` đánh dấu ⚠ khi > 2% câu trả lời không đọc được.

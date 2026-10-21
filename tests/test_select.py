@@ -1,6 +1,6 @@
 import itertools
 
-from viword.select import exact_select, greedy_select, trim_to_budget
+from viword.select import TokenCounter, exact_select, greedy_select, trim_to_budget
 
 
 def best_by_enumeration(scores, costs, budget):
@@ -45,3 +45,18 @@ def test_priority_goes_first():
 def test_trim_drops_lowest_scores_until_fit():
     keep = trim_to_budget([True, True, True], [0.5, 0.1, 0.9], 2, count_tokens=lambda k: sum(k))
     assert keep == [True, False, True]
+
+
+class DummyPrefixTokenizer:
+    """SentencePiece with a dummy prefix (SeaLLM-7B-v2): " Hà" -> ["▁", "▁Hà"], "Hà Nội" -> ["▁Hà", "▁Nội"]."""
+
+    def encode(self, text, add_special_tokens=False):
+        text = "▁" + text.replace(" ", "▁")
+        return ["▁"] * (len(text) - len(text.lstrip("▁")) - 1) + ["▁" + w for w in text.split("▁") if w]
+
+
+def test_unit_cost_sums_to_the_sentence_with_a_dummy_prefix():
+    counter = TokenCounter(DummyPrefixTokenizer())
+    words = "Hà Nội là thủ đô của Việt Nam".split()
+    assert counter.count(" Hà") == 2  # counting " " + w alone would cost one extra "▁" per word
+    assert sum(counter.unit_cost(w, False) for w in words) == counter.count(" ".join(words)) == 8

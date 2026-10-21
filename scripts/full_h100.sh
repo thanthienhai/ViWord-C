@@ -3,14 +3,15 @@
 #
 #   bash scripts/full_h100.sh phase1   # gates G1/G2/G3 on dev, labels, 3 seeds x 2 encoders, ckpt_check (~4-5 h)
 #   bash scripts/full_h100.sh phase2   # dev decisions: diagnose (G1/G2/G5, D4/G6 audit), select π, MDE (~2-4 h)
-#   bash scripts/full_h100.sh phase3   # test: evaluation on 7 test sets, BERTScore, analysis (~12-18 h)
+#   bash scripts/full_h100.sh phase3   # test: evaluation on 7 test sets, analysis (~12-18 h)
 #
 # Send results/full/ back after each phase and wait for the project owner before the next one:
 # a failed gate G3 changes the evaluation design, and the π selected in phase 2 must be committed
 # to git by the project owner before phase 3 (stage eval refuses an uncommitted π).
 # Needs the environment and data of the smoke test: run `bash scripts/smoke_h100.sh setup check_data`
 # first on a fresh machine. Teacher, segmentation and teacher_test stages are NOT run here: their
-# outputs come with the HF data (teacher_test needs the internal teacher endpoint).
+# outputs come with the HF data (teacher_test needs the internal teacher endpoint). Nor is bertscore: it
+# needs Java (VnCoreNLP) and runs on the project owner's machine on $OUT/eval (scripts/bertscore_local.sh).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -61,7 +62,6 @@ collect_mde() {
   collect_as results/mde_dev/report.md mde_report.md
   collect_as results/mde_dev/report.json mde_report.json
 }
-collect_bertscore() { collect results/bertscore; }
 collect_analyze() { collect results/analysis_3seed.md; }
 
 run_stages() {  # run_pipeline.sh stages, full log in $OUT/<name>.log; stop on the first error
@@ -106,7 +106,6 @@ phase2() {
 phase3() {
   require_runs
   run_stages eval eval  # refuses to start without PASS ckpt_check/MDE, committed π and teacher_test files
-  run_stages bertscore bertscore
   run_stages analyze analyze
   mkdir -p "$OUT/eval" && cp results/eval/*.jsonl "$OUT/eval"/
   log "Phase 3 done. Send back $OUT"

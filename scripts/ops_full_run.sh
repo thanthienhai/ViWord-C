@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
-# ViWord-C full run for the GPU ops team: one file, three parts. Needs 1x H100 80 GB, ~100 GB of disk,
-# internet (GitHub, Hugging Face, pip), Java >= 8 (VnCoreNLP for bertscore in part3) and a Hugging Face
-# token that can read the private repo thanthienhai/viword-c-data (export HF_TOKEN=hf_xxx).
+# ViWord-C full run for the GPU ops team: one file, four parts. Needs 1x H100 80 GB, ~100 GB of disk,
+# internet (GitHub, Hugging Face, pip) and a Hugging Face token that can read the private repo
+# thanthienhai/viword-c-data (export HF_TOKEN=hf_xxx). No Java: BERTScore (VnCoreNLP + PhoBERT) runs on the
+# project owner's machine after part3 (scripts/bertscore_local.sh).
 #
 #   bash ops_full_run.sh part1   # ~5-6 h: environment, data check, pre-check of the new tasks,
 #                                #         diagnostics, phase 1 (gates on dev, labels, 6 encoders, ckpt_check)
 #   bash ops_full_run.sh part2   # ~2-4 h: phase 2 (dev decisions: diagnostics, select π, MDE)
 #   bash ops_full_run.sh part3   # ~12-18 h: update the code (committed π), phase 3 (7 test sets + analysis)
+#   bash ops_full_run.sh part4   # ~12-18 h: the second reader (SeaLLM-7B-v2) on the 7 test sets, same code
 #
-# After each part, send back the .tgz printed on the last line. Start the next part ONLY when the
-# project owner says so. Do not edit code on the machine; on an error, send the .tgz anyway (it holds
-# the logs). Settings via environment, e.g.: GPU=1 WORKDIR=/mnt/hps/anhm-paper/viword-c-full bash ops_full_run.sh part1
+# Each part packs a .tgz and its .sha256. With HF_RESULTS_TOKEN (write access to the private results repo
+# HF_RESULTS_REPO) both are uploaded there; otherwise send back the two files printed on the last line.
+# Start the next part ONLY when the project owner says so. Do not edit code on the machine; on an error,
+# the .tgz is packed anyway (it holds the logs). Settings via environment, e.g.: GPU=1 WORKDIR=/mnt/hps/anhm-paper/viword-c-full bash ops_full_run.sh part1
 # After an error, rerun the same command with the same WORKDIR: finished steps are skipped (a phase
 # itself restarts from its first stage). Out of GPU memory in vLLM: add VIWORD_VLLM_GPU_UTIL=0.7.
 # Steps: docs/RUN_OPS.md
@@ -27,15 +30,27 @@ export CUDA_VISIBLE_DEVICES=$GPU PYTHONPATH=. PYTHONIOENCODING=utf-8 TOKENIZERS_
 READER=${READER:-Qwen/Qwen2.5-7B-Instruct}
 LL2=microsoft/llmlingua-2-xlm-roberta-large-meetingbank
 OUT=results/full
+READER2=${READER2:-SeaLLMs/SeaLLM-7B-v2}
+export HF_RESULTS_REPO=${HF_RESULTS_REPO:-thanthienhai/viword-c-results}   # packages back to the project owner
 
 log() { echo -e "\n=== $* ($(date '+%F %T'))"; }
 die() { echo -e "\n!!! $*" >&2; exit 1; }
 
-pack() {  # tarball next to WORKDIR, printed last so the ops team knows what to send
-  local tgz
+pack() {  # tarball + checksum next to WORKDIR, uploaded if possible; the last line says what to send
+  local tgz py=python3
   tgz="$(dirname "$WORKDIR")/viword_$1_$(date +%Y%m%d_%H%M).tgz"
   tar czf "$tgz" -C "$WORKDIR" "$OUT"
-  echo -e "\nSend back: $tgz ($(du -h "$tgz" | cut -f1))"
+  (cd "$(dirname "$tgz")" && sha256sum "$(basename "$tgz")" > "$(basename "$tgz").sha256")
+  cat "$tgz.sha256"
+  if [ -n "${HF_RESULTS_TOKEN:-}" ]; then
+    [ -x "$WORKDIR/.venv/bin/python" ] && py="$WORKDIR/.venv/bin/python"
+    if HF_TOKEN=$HF_RESULTS_TOKEN "$py" "$WORKDIR/scripts/hf_results.py" push "$tgz"; then
+      echo -e "\nUploaded: $(basename "$tgz") (+ .sha256) to $HF_RESULTS_REPO; nothing to send by hand"
+      return 0
+    fi
+    echo "upload to $HF_RESULTS_REPO failed: send the two files below by hand"
+  fi
+  echo -e "\nSend back: $tgz ($(du -h "$tgz" | cut -f1)) and $tgz.sha256"
 }
 
 step() {  # run one step with its own log in $OUT; on failure print the tail and return 1
@@ -118,7 +133,6 @@ diagnose() {  # G1 (CBR), G2 (negated ViNLI pairs), G5; needs the filled blind s
 part1() {
   [ -n "${HF_TOKEN:-}" ] || [ -s "${HF_HOME:-$HOME/.cache/huggingface}/token" ] \
     || die "no Hugging Face token: export HF_TOKEN=hf_xxx (read access to $HF_DATA_REPO)"
-  command -v java >/dev/null || die "no Java: install a JRE >= 8 (e.g. apt-get install -y openjdk-17-jre-headless)"
   if [ -e "$WORKDIR" ]; then  # rerun after an error: same code and environment, finished steps are skipped
     [ -f "$WORKDIR/$OUT/ops_part1.log" ] \
       || die "$WORKDIR exists but is not a part1 folder: delete it or set WORKDIR=<new folder>"
@@ -147,8 +161,6 @@ part1() {
   pip freeze > "$OUT/pip_freeze.txt"
   nvidia-smi > "$OUT/nvidia_smi.txt" 2>&1 || true
   run check_data check_data
-  # VnCoreNLP is only used by bertscore in part3: download its model and start it now, not after 12 h
-  run vncorenlp python -c "from viword.segment import VnCoreNLPSegmenter; print(VnCoreNLPSegmenter().segment('Hà Nội'))"
   # a failure in these two does not block phase 1; it is listed in $OUT/FAILED_STEPS
   # (diagnose runs again in phase 2, after training, and must pass there)
   try_run precheck precheck
@@ -200,7 +212,6 @@ part3() {
   [ -d "$WORKDIR/$OUT" ] || die "$WORKDIR/$OUT not found: run part1 first, in the same WORKDIR"
   cd "$WORKDIR"
   grep -q "Phase 2 done" "$OUT/full.log" || die "phase 2 did not finish: rerun part2"
-  command -v java >/dev/null || die "no Java: install a JRE >= 8 (bertscore needs VnCoreNLP)"
   exec > >(tee -a "$OUT/ops_part3.log") 2>&1
   log "part3: code $(git rev-parse --short HEAD), GPU $GPU"
   # shellcheck disable=SC1091
@@ -214,7 +225,23 @@ part3() {
   pack part3
 }
 
+part4() {  # second reader on the test sets, with the code and π of part3 (dev decisions are the primary reader's)
+  [ -d "$WORKDIR/$OUT" ] || die "$WORKDIR/$OUT not found: run part1 first, in the same WORKDIR"
+  cd "$WORKDIR"
+  grep -q "Phase 3 done" "$OUT/full.log" || die "phase 3 did not finish: rerun part3"
+  exec > >(tee -a "$OUT/ops_part4.log") 2>&1
+  log "part4: code $(git rev-parse --short HEAD), reader $READER2, GPU $GPU"
+  # shellcheck disable=SC1091
+  source .venv/bin/activate
+  run reader2_template python scripts/check_reader_template.py --reader "$READER2" \
+    --data data/tasks/vimmrc_dev.jsonl --task vimmrc
+  cat "$OUT/reader2_template.log"
+  run reader2_eval env READER="$READER2" bash scripts/run_pipeline.sh eval
+  mkdir -p "$OUT/eval" && cp results/eval/*_"$(basename "$READER2")"*.jsonl "$OUT/eval"/
+  pack part4
+}
+
 PART=${1:-}
 if [ "$PART" = _call ]; then shift; "$@"; exit; fi                 # one step, called by step()
-[[ $PART =~ ^part[123]$ ]] || { grep -E '^#( |$)' "$0" | head -17; exit 1; }
+[[ $PART =~ ^part[1234]$ ]] || { grep -E '^#( |$)' "$0" | head -20; exit 1; }
 "$PART"

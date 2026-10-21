@@ -13,7 +13,7 @@ Chia làm **ba pha**, giữa các pha phải chờ chủ đề tài đồng ý:
 |---|---|---|---|
 | 1 | `bash scripts/full_h100.sh phase1` | cổng G1/G2/G3 trên tập dev; dựng nhãn; huấn luyện 6 encoder; `ckpt_check` reader trên 200 mẫu dev | 4–5 giờ |
 | 2 | `bash scripts/full_h100.sh phase2` | chẩn đoán G1/G2/G5 và kiểm tra P trên phiếu mù, chọn π trên dev, tính MDE | 2–4 giờ |
-| 3 | `bash scripts/full_h100.sh phase3` | nén + đọc trên 7 tập test, BERTScore VietNews, phân tích | 12–18 giờ |
+| 3 | `bash scripts/full_h100.sh phase3` | nén + đọc trên 7 tập test, phân tích | 12–18 giờ |
 
 Lý do tách pha: nếu cổng G3 không đạt, cách đánh giá phải đổi; π chọn ở pha 2 phải được chủ đề tài commit vào git
 trước pha 3 (`eval` từ chối π chưa commit). Không chạy pha sau khi chưa được đồng ý.
@@ -25,7 +25,8 @@ Giống smoke test (1 GPU ≥ 80 GB khuyến nghị, quyền đọc repo HF `tha
 - Khoảng **40 GB** đĩa trống ngoài phần của smoke (6 checkpoint XLM-R-large ~13 GB, các bản nén và kết quả).
 - Thư mục repo phải **giữ nguyên qua ba pha** (PVC/NFS), vì pha sau đọc checkpoint trong `runs/` và báo cáo do pha
   trước tạo ra.
-- Java ≥ 8 (VnCoreNLP cho stage `bertscore` ở pha 3). Mọi mô hình đều không gated.
+- Không cần Java: BERTScore VietNews (VnCoreNLP + PhoBERT) chạy trên máy chủ đề tài bằng
+  `scripts/bertscore_local.sh`, từ thư mục `eval/` của pha 3. Mọi mô hình đều không gated.
 
 ## 0. Chuẩn bị (bỏ qua nếu dùng lại đúng thư mục đã chạy smoke)
 
@@ -85,7 +86,7 @@ bash scripts/full_h100.sh phase3
 tar czf full_phase3.tgz results/full
 ```
 
-Thành công khi `full.log` kết thúc bằng `Phase 3 done`. File tar có `analysis_3seed.md`, `bertscore/` và thư mục `eval/`
+Thành công khi `full.log` kết thúc bằng `Phase 3 done`. File tar có `analysis_3seed.md` và thư mục `eval/`
 (kết quả từng mẫu, khoảng vài trăm MB).
 
 ## Khi gặp lỗi
