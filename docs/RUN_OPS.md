@@ -41,7 +41,7 @@ với thông báo ở mục 5.
 
 | Trước phần | Chủ đề tài đã làm | Nếu chưa làm | Trạng thái 20/10 |
 |---|---|---|---|
-| 1 | đẩy code lên GitHub `main`, đẩy dữ liệu mới lên Hugging Face (khớp `data/SHA256SUMS`) | `check_data` dừng | **xong** (dữ liệu HF `e47ee9a5`, 57/57 file khớp) |
+| 1 | đẩy code lên GitHub `main`, đẩy dữ liệu mới lên Hugging Face (khớp `data/SHA256SUMS`) | `check_data` dừng | **xong** (dữ liệu HF `029106eb`, 57/57 file khớp) |
 | 1 | gán nhãn và commit hai phiếu mù `data/annot/protect_sheet.jsonl`, `probe_sheet.jsonl` | phần 1: `diagnose` lỗi (không chặn); phần 2: dừng | **xong** (`protect_eval` hợp lệ, G6 đạt) |
 | 1 | tạo repo private `thanthienhai/viword-c-results` và token chỉ ghi repo đó (`HF_RESULTS_TOKEN`) | gói kết quả phải gửi tay (mục 4c) | **xong** (repo tạo 21/10; token của đội vận hành cần quyền ghi repo này) |
 | 3 | commit `config/pi_selected.{json,env}` (lấy từ file `.tgz` của phần 2) | `update_code` dừng | chờ phần 2 |

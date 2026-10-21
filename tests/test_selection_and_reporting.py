@@ -144,3 +144,18 @@ def test_bertscore_feeds_phobert_word_segmented_text():
     out = add_bertscore(rows, {"a": "học sinh đi"}, Seg(), score_fn)
     assert seen["c"] == ["học_sinh đi"] and seen["r"] == ["học_sinh đi"]
     assert out[0]["bertscore_f1"] == 0.7 and "bertscore_f1" not in out[1]
+
+
+def test_phobert_texts_longer_than_256_subwords_are_cut():
+    # a single summary past PhoBERT's 258 positions used to kill the whole file (smoke 2026-10-21)
+    utils = pytest.importorskip("bert_score.utils")
+    from transformers import AutoTokenizer
+
+    from scripts.bertscore import MAX_SUBWORDS, cap_phobert_length
+
+    try:
+        tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base")
+    except OSError:
+        pytest.skip("vinai/phobert-base tokenizer not available")
+    text = "học_sinh đi học " * 150
+    assert len(utils.sent_encode(cap_phobert_length(tokenizer), text)) == MAX_SUBWORDS

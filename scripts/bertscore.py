@@ -21,6 +21,13 @@ from viword.data import read_jsonl, write_jsonl
 MAX_SUBWORDS = 256
 
 
+def cap_phobert_length(tokenizer):
+    """bert_score cuts texts at `tokenizer.model_max_length`, which transformers 5 no longer sets to 256 for PhoBERT
+    (it is 1e30): a longer summary then overruns the 258 position embeddings and kills the whole file."""
+    tokenizer.model_max_length = MAX_SUBWORDS
+    return tokenizer
+
+
 def phobert_input(segmenter, text: str) -> str:
     """Word-segmented form expected by PhoBERT: syllables of a word joined by "_"."""
     return " ".join(w.text.replace(" ", "_") for sentence in segmenter.segment(text) for w in sentence)
@@ -54,12 +61,11 @@ def main() -> None:
     args = ap.parse_args()
 
     from bert_score import BERTScorer
-    from transformers import AutoTokenizer
 
     from viword.segment import get_segmenter
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
     scorer = BERTScorer(model_type=args.model, num_layers=args.num_layers, batch_size=args.batch_size)
+    tokenizer = cap_phobert_length(scorer._tokenizer)  # the tokenizer bert_score encodes with
     truncated = 0
 
     def score_fn(candidates, refs):

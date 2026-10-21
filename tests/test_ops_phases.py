@@ -51,6 +51,7 @@ def test_the_gpu_machine_needs_no_java():
     assert 'cp results/eval/*.jsonl "$OUT/eval"/' in _body(FULL, "phase3")
     local = (SCRIPTS / "bertscore_local.sh").read_text(encoding="utf-8")
     assert "scripts/bertscore.py" in local and "VIETNEWS=${VIETNEWS:-data/tasks/vietnews_test.jsonl}" in local
+    assert "export JAVA_HOME=${JAVA_HOME:-" in local  # a JRE alone: pyjnius otherwise looks for javac
 
 
 def test_every_package_has_a_checksum_and_the_second_reader_comes_back():

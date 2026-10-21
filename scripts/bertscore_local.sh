@@ -5,7 +5,7 @@
 #   python scripts/hf_results.py pull --match part4              # or part3; into results/from_gpu/
 #   bash scripts/bertscore_local.sh results/from_gpu/viword_part4_<date>.tgz   # or an unpacked folder
 #
-# Needs Java >= 8, the [seg,eval] extras and data/tasks/vietnews_test.jsonl (VIETNEWS) matching data/SHA256SUMS;
+# Needs Java >= 8 (a JRE is enough: JAVA_HOME is derived from `java` when unset), the [seg,eval] extras and data/tasks/vietnews_test.jsonl (VIETNEWS) matching data/SHA256SUMS;
 # a GPU is optional (PhoBERT-base). A .tgz must come with its .sha256. Writes
 # results/bertscore/<rows>.{jsonl,md} and env.txt (what scored them). The part4 package holds the rows
 # of both readers (part3 only those of the primary reader).
@@ -18,7 +18,9 @@ OUT=results/bertscore
 VIETNEWS=${VIETNEWS:-data/tasks/vietnews_test.jsonl}   # references; data/tasks/vietnews_dev.jsonl for a dev smoke
 export PYTHONPATH=. PYTHONIOENCODING=utf-8 TOKENIZERS_PARALLELISM=false
 
-command -v java >/dev/null || { echo "no Java: VnCoreNLP needs a JRE >= 8" >&2; exit 1; }
+command -v java >/dev/null || { echo "no Java: VnCoreNLP needs Java >= 8" >&2; exit 1; }
+# pyjnius finds the JVM through JAVA_HOME, else through javac, which a JRE lacks ("Unable to find javac")
+export JAVA_HOME=${JAVA_HOME:-$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")}
 grep "  $VIETNEWS$" data/SHA256SUMS | sha256sum --quiet -c \
   || { echo "$VIETNEWS differs from data/SHA256SUMS: pull the HF data" >&2; exit 1; }
 
