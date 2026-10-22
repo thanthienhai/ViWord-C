@@ -372,11 +372,18 @@ stage_ckpt_check() {  # DATN §3.3/C3: reader sanity gate on 200 DEV examples
     IFS=: read -r task stem _ <<< "$spec"
     log "checkpoint sanity check on $stem with $READER"
     out="results/ckpt_check/${stem}_${reader_tag}.jsonl"
+    # reported, never gating: the published LLMLingua-2, and the teacher cut to the budget as in G4
+    # (results/teacher_dev covers the first 200 dev examples, so only up to that limit)
+    reference_methods=(llmlingua2)
+    teacher_dev="results/teacher_dev/$stem.jsonl"
+    if [ -s "$teacher_dev" ] && [ "$CKPT_CHECK_LIMIT" -le 200 ]; then
+      reference_methods+=("precomputed:path=$teacher_dev,trim=1,name=teacher")
+    fi
     python scripts/evaluate.py --task "$task" --data "data/tasks/$stem.jsonl" \
       --segmented "data/segmented/$stem.jsonl" --reader "$READER" --backend "$READER_BACKEND" \
       ${READER_URL:+--base-url $READER_URL} --tokenizer "$READER_TOKENIZER" \
       --ratios "$CKPT_CHECK_RATIO" --limit "$CKPT_CHECK_LIMIT" \
-      --methods truncation "$(lexprior_spec)" "${checkpoint_methods[@]}" --out "$out"
+      --methods truncation "$(lexprior_spec)" "${reference_methods[@]}" "${checkpoint_methods[@]}" --out "$out"
     rows+=("$out")
   done
   python scripts/checkpoint_check.py --rows "${rows[@]}" --ratio "$CKPT_CHECK_RATIO" \

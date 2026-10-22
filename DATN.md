@@ -292,6 +292,11 @@ văn bản ─► chuẩn hoá Unicode (NFC) ─► tách từ (RDRSegmenter) + 
   vì VietNews có thiên lệch phần mở đầu mạnh tới mức chính thầy thua truncation. Checkpoint LLMLingua-2-vi là đối
   chứng nên chỉ được báo cáo, không chặn pipeline. Đây là kiểm tra đạt/không đạt trên dev, không dùng để chọn
   checkpoint; `eval` bị chặn nếu báo cáo JSON không ghi `PASS`.
+  *Bổ sung 22/10/2026, trước lần chạy chính thức, không đổi luật PASS:* trên cùng các dòng, báo cáo thêm hai mốc
+  tham chiếu không chặn: LLMLingua-2 bản công bố (`llmlingua2`, nhãn tiếng Anh) và đầu ra của chính thầy cắt về
+  ngân sách (`teacher`, như G4 với `trim=1`). Smoke 21/10 cho thấy bản công bố ngang hoặc hơn các bản chưng cất ở
+  vài tác vụ; hai mốc này cho biết trên dev chưng cất có hơn bản công bố không, và thầy có hơn không (nếu thầy
+  không hơn thì encoder học từ thầy khó hơn).
 
 ### 3.4 Ưu tiên bảo vệ ngôn ngữ π(w)
 Tập bảo vệ **P** được xác định theo **từ + ngữ cảnh**, không chỉ theo chuỗi ký tự. Cụ thể trong code: thực thể

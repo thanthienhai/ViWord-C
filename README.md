@@ -90,7 +90,9 @@ READER_BACKEND=vllm bash scripts/run_pipeline.sh ckpt_check eval analyze   # tea
 stage chạy reader cho mọi `viword_s*` (quyết định cấp từ) và `llmlingua2vi_s*` (cấp âm tiết), rồi so điểm chính với
 `truncation` và đối chứng tra từ `lexprior` (khớp trên phần train của encoder). Mỗi `viword_s*` phải thắng từng
 baseline trên đa số dev set (cùng quy tắc đa số với G4); `llmlingua2vi_s*` chỉ để tham khảo, không chặn. Báo cáo ở
-`results/ckpt_check/report.{md,json}` phải là `PASS`, nếu không `stage_eval` dừng.
+`results/ckpt_check/report.{md,json}` phải là `PASS`, nếu không `stage_eval` dừng. Báo cáo còn có hai mốc tham chiếu
+không chặn trên cùng các mẫu: LLMLingua-2 bản công bố (`llmlingua2`) và đầu ra thầy cắt về ngân sách (`teacher`, từ
+`results/teacher_dev`), kèm bảng "thầy − LLMLingua-2" theo từng tác vụ.
 
 `mde` chạy trước `eval` trên các split dev, dùng cùng ba seed và bootstrap phân tầng seed → cụm. Nó ghi
 `results/mde_dev/report.{md,json}`: MDE và độ lệch chuẩn seed cho H1, NFR H2 trên ViNLI, cùng ROUGE-L H2 trên

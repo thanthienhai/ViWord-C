@@ -55,6 +55,29 @@ def test_llmlingua2vi_is_reported_but_does_not_gate():
     assert "reference" in render_report(summary)
 
 
+def test_package_and_teacher_are_reported_but_do_not_gate():
+    # the checkpoint loses to the published LLMLingua-2 and to the teacher: still PASS, but the report says so
+    values = {"truncation": 0.5, "lexprior": 0.6, "viword_s0": 0.7, "llmlingua2": 0.75, "teacher": 0.8}
+    summary = summarize(_rows(values=values), expected_per_task=2)
+    assert summary["passed"]
+    checkpoint = next(c for c in summary["checkpoints"] if c["method"] == "viword_s0")
+    assert checkpoint["wins"] == {"truncation": 1, "lexprior": 1}
+    assert checkpoint["reference_wins"] == {"llmlingua2": 0, "teacher": 0}
+    assert summary["references"][0]["teacher_minus_llmlingua2"] == pytest.approx(0.05)
+    report = render_report(summary)
+    assert "the teacher against the published LLMLingua-2" in report and "+0.0500" in report
+    # rows without the two references (an older run) still give a report
+    assert "n/a" in render_report(summarize(_rows(), expected_per_task=2))
+
+
+def test_pipeline_adds_the_two_references_to_ckpt_check():
+    text = (Path(__file__).parents[1] / "scripts" / "run_pipeline.sh").read_text(encoding="utf-8")
+    stage = text[text.index("stage_ckpt_check()"):text.index("stage_select_pi()")]
+    assert "reference_methods=(llmlingua2)" in stage
+    assert 'precomputed:path=$teacher_dev,trim=1,name=teacher' in stage
+    assert '"${reference_methods[@]}" "${checkpoint_methods[@]}"' in stage
+
+
 def test_checkpoint_check_requires_the_full_200_example_slice():
     summary = summarize(_rows(), expected_per_task=200)
     assert not summary["passed"]
