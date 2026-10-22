@@ -34,6 +34,12 @@ def load_exclusions(path: str | Path = EXCLUSIONS) -> dict[str, dict]:
     return {stem: {"task": s["task"], "ids": set(s["ids"])} for stem, s in sets.items()}
 
 
+def exclusions_digest(path: str | Path = EXCLUSIONS) -> str:
+    """Hash of the excluded ids, not of the file bytes (git may rewrite line endings)."""
+    sets = {stem: sorted(s["ids"]) for stem, s in load_exclusions(path).items()}
+    return hashlib.sha256(json.dumps(sets, sort_keys=True).encode("utf-8")).hexdigest()
+
+
 def excluded_ids(exclusions: dict[str, dict], data_path: str | Path) -> set[str]:
     """Excluded ids of one test file, looked up by its stem (data/tasks/vinli_test.jsonl -> vinli_test)."""
     stem = Path(data_path).name.removesuffix(".jsonl")

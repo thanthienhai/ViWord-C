@@ -30,8 +30,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from scripts.analyze import aggregate_seed_rows, paired, row_key
 from viword.data import read_jsonl
-from viword.heldout import excluded_ids, load_exclusions
-from viword.segment_meta import sha256_path
+from viword.heldout import excluded_ids, exclusions_digest, load_exclusions
 
 H1_TARGET, H1_REFERENCE = "viword", "llmlingua2vi"
 from viword.stats import minimum_detectable_effect
@@ -313,7 +312,7 @@ def main() -> None:
         report = json.loads(Path(args.verify).read_text(encoding="utf-8"))
         if not report.get("dev_only") or not report.get("passed"):
             raise SystemExit(f"mde: refusing test evaluation; MDE report is not PASS: {args.verify}")
-        if args.exclude and report.get("test_exclusions_sha256") != sha256_path(args.exclude):
+        if args.exclude and report.get("test_exclusions_digest") != exclusions_digest(args.exclude):
             raise SystemExit(f"mde: report was not projected to the test rows left by {args.exclude}; "
                              "recompute it (run_pipeline.sh mde)")
         reported = report.get("rouge_margin_check", {}).get("margin_points")
@@ -337,7 +336,7 @@ def main() -> None:
         result = compute(rows, args.seeds, args.reader, args.n_boot, args.margin_points,
                          count_test_clusters(args.test_data, exclusions))
         if args.exclude:
-            result["test_exclusions_sha256"] = sha256_path(args.exclude)
+            result["test_exclusions_digest"] = exclusions_digest(args.exclude)
         write_outputs(result, args.out, args.report)
     except (KeyError, ValueError, FileNotFoundError) as exc:
         raise SystemExit(f"mde: {exc}") from exc

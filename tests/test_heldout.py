@@ -79,17 +79,26 @@ def test_primary_analysis_drops_the_scored_rows_and_counts_the_remaining_cluster
         excluded_ids(exclusions, tmp_path / "vinli_dev.jsonl")
 
 
-def test_mde_report_must_use_the_committed_exclusions(tmp_path, monkeypatch):
+def test_mde_report_must_use_the_committed_exclusions(tmp_path, monkeypatch, capsys):
     from scripts import mde
+    from viword.heldout import exclusions_digest
 
     exclusions = _exclusions(tmp_path, ["vinli-test-0"])
     report = tmp_path / "report.json"
-    report.write_text(json.dumps({"dev_only": True, "passed": True, "rouge_margin_check": {"margin_points": 0.5},
-                                  "h1_contrast": "viword − llmlingua2vi", "reader": "r",
-                                  "test_exclusions_sha256": "an older list"}), encoding="utf-8")
+    fields = {"dev_only": True, "passed": True, "rouge_margin_check": {"margin_points": 0.5},
+              "h1_contrast": "viword − llmlingua2vi", "reader": "r"}
     monkeypatch.setattr("sys.argv", ["mde.py", "--verify", str(report), "--exclude", str(exclusions)])
+    report.write_text(json.dumps({**fields, "test_exclusions_digest": "an older list"}), encoding="utf-8")
     with pytest.raises(SystemExit, match="recompute"):
         mde.main()
+    report.write_text(json.dumps({**fields, "test_exclusions_digest": exclusions_digest(exclusions)}),
+                      encoding="utf-8")
+    mde.main()
+    assert "MDE PASS" in capsys.readouterr().out
+    # the digest is of the ids, so a copy with other line endings is the same list
+    crlf = tmp_path / "crlf.json"
+    crlf.write_bytes(exclusions.read_bytes().replace(b"\n", b"\r\n") + b"\r\n")
+    assert exclusions_digest(crlf) == exclusions_digest(exclusions)
 
 
 def test_belebele_dev_is_a_verified_subset_of_belebele(tmp_path):
