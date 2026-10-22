@@ -20,7 +20,8 @@ import time
 
 from tqdm import tqdm
 
-from viword.data import TASKS, load_contexts, load_task, read_jsonl, write_jsonl
+from viword.data import TASKS, examples_from_rows, load_contexts, read_jsonl, write_jsonl
+from viword.heldout import excluded_ids, load_exclusions, refuse_unseen_test_rows
 from viword.eval import (MAX_NEW_TOKENS, APIReader, HFReader, VLLMReader, budget_deviates,
                          build_prompt, context_budget, parse_prediction, score, tokens_per_budget)
 from viword.methods import build_compressor
@@ -86,6 +87,9 @@ def main():
     ap.add_argument("--methods", nargs="+", required=True)
     ap.add_argument("--ratios", type=float, nargs="+", default=[0.5, 1 / 3, 0.2])
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--exclude", default=None,
+                    help="config/test_exclusions.json: drop the test rows readers scored during development "
+                         "before --limit (the teacher upper bound uses the first unseen rows)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--max-model-len", type=int, default=8192)
     ap.add_argument("--backend", default="vllm", choices=["vllm", "hf", "api"],
@@ -98,7 +102,13 @@ def main():
                     help="optional system message for readers whose chat template expects one")
     args = ap.parse_args()
 
-    examples = load_task(args.task, args.data, args.limit)
+    data_rows = read_jsonl(args.data)
+    if args.exclude:
+        skip = excluded_ids(load_exclusions(args.exclude), args.data)
+        data_rows = [r for r in data_rows if r["id"] not in skip]
+    data_rows = data_rows[:args.limit]
+    refuse_unseen_test_rows(data_rows)  # DATN §4.3: unseen test rows only in the eval stage
+    examples = examples_from_rows(args.task, data_rows)
     contexts = load_contexts(examples, args.segmented)
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
 

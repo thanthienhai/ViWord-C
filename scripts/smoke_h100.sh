@@ -3,8 +3,10 @@
 #
 # Goal: check every code path that could not run on the Windows/GTX 1060 machine
 # (XLM-R-large training, vLLM reader, causal-LM baselines) and get a first look at the
-# trends. Small on purpose: 1 seed, 1 epoch, a subset of the distilled data, 200 Belebele
-# questions and 300 ViNLI pairs. The numbers are NOT results for the paper.
+# trends. Small on purpose: 1 seed, 1 epoch, a subset of the distilled data, the 200 belebele_dev
+# questions and 300 ViNLI dev pairs. The numbers are NOT results for the paper. No step reads a test
+# set (DATN §4.3): Belebele has no dev split, so belebele_dev is made of the Belebele questions readers
+# scored during development (config/test_exclusions.json), which the test analysis leaves out.
 #
 # Data (not in git) comes from the private Hugging Face dataset repo HF_DATA_REPO, pinned to the
 # commit HF_DATA_REVISION so every run uses the same data (pushed from the data-preparation
@@ -75,6 +77,7 @@ step_check_data() {
     [ -s "$f" ] || { echo "missing $f (set HF_DATA_REPO, see the top of this script)"; exit 1; }
     echo "$(wc -l < "$f") $f"
   done
+  python scripts/test_exclusions.py belebele-dev
   python scripts/check_segmented.py --directory data/segmented --segmenter vncorenlp
 }
 
@@ -118,8 +121,8 @@ step_train() {
 
 step_eval() {
   log "small task files"
-  head -n "$N_BELEBELE" data/tasks/belebele.jsonl > "$OUT/belebele.jsonl"
-  head -n "$N_VINLI" data/tasks/vinli_test.jsonl > "$OUT/vinli.jsonl"
+  head -n "$N_BELEBELE" data/tasks/belebele_dev.jsonl > "$OUT/belebele.jsonl"
+  head -n "$N_VINLI" data/tasks/vinli_dev.jsonl > "$OUT/vinli.jsonl"
   methods=(none no_context lead truncation tfidf_sent "ppl_sent:lm=$LM" "selective_context:lm=$LM"
            "scored:model=$LL2,unit=syllable,name=llmlingua2_syl"
            "scored:model=$LL2,unit=word,name=llmlingua2_wordpool"
@@ -130,7 +133,7 @@ step_eval() {
            "scored:model=runs/smoke_viword,unit=word,protect=soft,delta=0.2,name=viword_pi"
            "lexprior:train=data/distill/smoke_subset.jsonl,name=lexprior")
   for task in belebele vinli; do
-    stem=$([ "$task" = vinli ] && echo vinli_test || echo belebele)
+    stem=$([ "$task" = vinli ] && echo vinli_dev || echo belebele_dev)
     extra=()
     [ "$task" = vinli ] && extra=(probe_negation)
     log "evaluate $task with $READER (vLLM)"

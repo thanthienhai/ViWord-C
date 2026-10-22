@@ -27,6 +27,12 @@ vì bootstrap lấy mẫu lại theo cụm (DATN §4.3).
 
 `data/distill/paragraphs.jsonl`: `id`, `text` (đoạn VietNews/Wikipedia 300–1500 âm tiết, không trùng test).
 
+`data/tasks/belebele_dev.jsonl` và `data/segmented/belebele_dev.jsonl` (+ sidecar `provenance: subset`) không có
+trên Hugging Face: `scripts/test_exclusions.py belebele-dev` chép nguyên dòng từ các file `belebele` đã kiểm checksum.
+Đó là 200 câu Belebele (111 đoạn) mà reader đã chấm trong lúc phát triển (`config/test_exclusions.json`, DATN §4.3);
+phân tích test bỏ chúng, smoke và precheck dùng chúng thay cho dev. `check_segmented.py` chấp nhận sidecar `subset`
+khi file nguồn còn nguyên checksum, sidecar của nguồn hợp lệ và mọi dòng có trong nguồn.
+
 ## Nguồn
 
 - VietNews: Nguyen et al. (2019), bộ dữ liệu tóm tắt tin tức tiếng Việt.

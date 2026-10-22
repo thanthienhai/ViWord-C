@@ -86,12 +86,53 @@ def write_metadata(output: str | Path, metadata: dict) -> Path:
 
 
 FRESH_PROVENANCE = "scripts/segment_data.py"
+# a selection of lines of another segmented file in the same folder (e.g. belebele_dev of belebele);
+# it is as trustworthy as that file, which verify_metadata checks along with the selection itself
+SUBSET_PROVENANCE = "subset"
+
+
+def build_subset_metadata(output: str | Path, source: str | Path) -> dict:
+    """Metadata for ``output``, whose lines were copied unchanged from ``source`` (same folder)."""
+    output, source = Path(output), Path(source)
+    if source.parent.resolve() != output.parent.resolve():
+        raise ValueError(f"{output} and its source {source} must be in the same folder")
+    with open(metadata_path(source), encoding="utf-8") as f:
+        source_meta = json.load(f)
+    with open(output, encoding="utf-8") as f:
+        rows = sum(1 for line in f if line.strip())
+    return {
+        "schema": METADATA_SCHEMA,
+        "segmenter": source_meta["segmenter"],
+        "implementation": source_meta["implementation"],
+        "annotators": source_meta["annotators"],
+        "provenance": SUBSET_PROVENANCE,
+        "source": source.name,
+        "source_sha256": sha256_path(source),
+        "output_sha256": sha256_path(output),
+        "rows": rows,
+    }
+
+
+def _subset_errors(output: Path, metadata: dict, expected_segmenter: str, require_verified: bool) -> list[str]:
+    source = output.with_name(metadata.get("source", ""))
+    if not metadata.get("source") or not source.exists():
+        return [f"{output}: subset of a missing file {metadata.get('source')!r}"]
+    if metadata.get("source_sha256") != sha256_path(source):
+        return [f"{output}: its source {source.name} has changed since the subset was taken"]
+    errors = [f"{output} (subset of): {e}" for e in verify_metadata(source, expected_segmenter, require_verified)]
+    with open(source, encoding="utf-8") as f:
+        source_lines = {line.rstrip("\r\n") for line in f}
+    with open(output, encoding="utf-8") as f:
+        if any(line.rstrip("\r\n") not in source_lines for line in f if line.strip()):
+            errors.append(f"{output}: has lines that are not in its source {source.name}")
+    return errors
 
 
 def needs_verification(metadata: dict) -> bool:
     """A sidecar written after the fact (not by segment_data.py) is only a claim until
-    a VnCoreNLP re-segmentation sample confirms it (scripts/verify_segmentation.py)."""
-    if metadata.get("provenance") == FRESH_PROVENANCE:
+    a VnCoreNLP re-segmentation sample confirms it (scripts/verify_segmentation.py).
+    A subset is checked against its source by verify_metadata instead."""
+    if metadata.get("provenance") in (FRESH_PROVENANCE, SUBSET_PROVENANCE):
         return False
     check = metadata.get("verification") or {}
     return not (check.get("sample_size", 0) > 0 and check.get("matched") == check.get("sample_size"))
@@ -132,4 +173,6 @@ def verify_metadata(output: str | Path, expected_segmenter: str = "vncorenlp",
     if require_verified and needs_verification(metadata):
         errors.append(f"{output}: provenance {metadata.get('provenance')!r} is unverified; run "
                       "scripts/verify_segmentation.py or re-segment with scripts/segment_data.py")
+    if metadata.get("provenance") == SUBSET_PROVENANCE:
+        errors += _subset_errors(output, metadata, expected_segmenter, require_verified)
     return errors

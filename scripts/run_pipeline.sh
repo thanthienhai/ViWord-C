@@ -68,6 +68,9 @@ CKPT_CHECK_JSON=${CKPT_CHECK_JSON:-results/ckpt_check/report.json}
 PI_GRID_TIERS=${PI_GRID_TIERS:-"T1 T1+T2 T1+T2+T3"}
 PI_GRID_DELTAS=${PI_GRID_DELTAS:-"0.1 0.2 0.3 0.5"}
 TEACHER_TEST_LIMIT=${TEACHER_TEST_LIMIT:-300}
+# test rows readers scored during development (DATN §4.3, amendment of 2026-10-22): out of the primary
+# analysis and of the teacher upper bound; the Belebele ones form belebele_dev (scripts/test_exclusions.py)
+TEST_EXCLUSIONS=${TEST_EXCLUSIONS:-config/test_exclusions.json}
 LL2_COMPARE_LIMIT=${LL2_COMPARE_LIMIT:-100}
 LL2_COMPARE_RATIO=${LL2_COMPARE_RATIO:-0.333}
 LM=${LM:-Qwen/Qwen2.5-1.5B-Instruct}       # small causal LM for ppl_sent / selective_context
@@ -136,6 +139,14 @@ require_committed_pi() {
   }
 }
 
+require_committed_exclusions() {  # the rows left out of the primary analysis are fixed before the test run
+  git ls-files --error-unmatch "$TEST_EXCLUSIONS" >/dev/null 2>&1 && git diff --quiet HEAD -- "$TEST_EXCLUSIONS" || {
+    echo "$TEST_EXCLUSIONS must be committed, unchanged, before eval" >&2
+    exit 1
+  }
+  python scripts/test_exclusions.py check --config "$TEST_EXCLUSIONS"
+}
+
 # ---------------------------------------------------------------------------- stages
 stage_data() {
   for d in belebele vinli vimmrc vietnews viquad gsm8k oneruler paragraphs; do
@@ -165,7 +176,12 @@ stage_segment() {
   log "segment distillation paragraphs"
   python scripts/segment_data.py --input data/distill/paragraphs_clean.jsonl --field text \
     --output data/segmented/paragraphs_clean.jsonl --segmenter "$SEGMENTER" --workers "$SEG_WORKERS"
+  stage_belebele_dev
   python scripts/check_segmented.py --directory data/segmented --segmenter vncorenlp
+}
+
+stage_belebele_dev() {  # Belebele has no dev split: the questions readers scored during development
+  python scripts/test_exclusions.py belebele-dev
 }
 
 stage_annot_sheets() {  # blind annotation sheets for D4 and G6; a human fills them in
@@ -440,7 +456,7 @@ stage_mde() {  # DATN §4.3/J4: estimate power on DEV before any test evaluation
   python scripts/mde.py --rows "${rows[@]}" --reader "$READER" --seeds $SEEDS \
     --n-boot "$MDE_BOOT" --margin-points "$MDE_MARGIN" --out "$MDE_JSON" --report "$MDE_REPORT" \
     --test-data vimmrc=data/tasks/vimmrc_test.jsonl vietnews=data/tasks/vietnews_test.jsonl \
-      vinli=data/tasks/vinli_test.jsonl \
+      vinli=data/tasks/vinli_test.jsonl --exclude "$TEST_EXCLUSIONS" \
     | tee results/mde_dev/stdout.md
 }
 
@@ -478,13 +494,16 @@ stage_select_alpha() {  # DATN §3.5/H3 (8-page): select α on VietNews + ViNLI 
 }
 
 stage_teacher_test() {  # DATN §4.2: teacher upper bound on a held-out test subset; needs TEACHER_URL,
-  # so it runs on the owner side and ships with the HF data (scripts/hf_data.py push)
+  # so it runs on the owner side and ships with the HF data (scripts/hf_data.py push).
+  # The subset is the first TEACHER_TEST_LIMIT rows that no reader scored during development; rows of an
+  # earlier subset stay in the file (resume), stage_eval reads only the current one
   mkdir -p results/teacher_test
   for spec in $TEST_SETS; do
     IFS=: read -r _ stem field <<< "$spec"
     log "teacher upper bound on $stem ($TEACHER_TEST_LIMIT)"
     python scripts/teacher_compress.py --input "data/tasks/$stem.jsonl" --field "$field" \
-      --limit "$TEACHER_TEST_LIMIT" --rates $RATIOS --output "results/teacher_test/$stem.jsonl" \
+      --exclude "$TEST_EXCLUSIONS" --limit "$TEACHER_TEST_LIMIT" --rates $RATIOS \
+      --output "results/teacher_test/$stem.jsonl" \
       --base-url "$TEACHER_URL" --model "$TEACHER_MODEL" --workers "$TEACHER_WORKERS" --max-tokens "$TEACHER_MAX_TOKENS"
   done
 }
@@ -500,7 +519,9 @@ stage_eval() {
     echo "missing $MDE_JSON; run: bash scripts/run_pipeline.sh mde after select_pi" >&2
     exit 1
   }
-  python scripts/mde.py --verify "$MDE_JSON" --margin-points "$MDE_MARGIN" --reader "$PRIMARY_READER"
+  require_committed_exclusions
+  python scripts/mde.py --verify "$MDE_JSON" --margin-points "$MDE_MARGIN" --reader "$PRIMARY_READER" \
+    --exclude "$TEST_EXCLUSIONS"
   require_segmented
   require_annotations
   [ -s "$PI_SELECTED_JSON" ] || {
@@ -556,14 +577,17 @@ stage_eval() {
     fi
     [ "$task" = belebele ] && task_methods+=("translate:inner=llmlingua2")
     [ "$task" = vinli ] && task_methods+=(probe_negation)
+    # the only reader calls on unseen test rows (viword/heldout.py); every check above has passed.
+    # The teacher upper bound uses the same rows as stage_teacher_test: the first unseen ones
     log "evaluate teacher upper bound on $task ($TEACHER_TEST_LIMIT samples)"
-    python scripts/evaluate.py --task "$task" --data "data/tasks/$stem.jsonl" \
+    VIWORD_TEST_EVAL=1 python scripts/evaluate.py --task "$task" --data "data/tasks/$stem.jsonl" \
       --segmented "data/segmented/$stem.jsonl" --reader "$READER" --backend "$READER_BACKEND" \
       ${READER_URL:+--base-url $READER_URL} --tokenizer "$READER_TOKENIZER" --ratios $RATIOS \
-      --limit "$TEACHER_TEST_LIMIT" --methods "precomputed:path=$teacher_path,name=teacher_upper" \
+      --exclude "$TEST_EXCLUSIONS" --limit "$TEACHER_TEST_LIMIT" \
+      --methods "precomputed:path=$teacher_path,name=teacher_upper" \
       --out "results/eval/teacher_upper_${task}_${reader_tag}.jsonl"
     log "evaluate $task with $READER"
-    python scripts/evaluate.py --task "$task" --data "data/tasks/$stem.jsonl" \
+    VIWORD_TEST_EVAL=1 python scripts/evaluate.py --task "$task" --data "data/tasks/$stem.jsonl" \
       --segmented "data/segmented/$stem.jsonl" --reader "$READER" --backend "$READER_BACKEND" \
       ${READER_URL:+--base-url $READER_URL} --tokenizer "$READER_TOKENIZER" --ratios $RATIOS $LIMIT_ARG \
       --methods "${task_methods[@]}" --out "results/eval/${task}_${reader_tag}.jsonl"
@@ -581,25 +605,36 @@ stage_bertscore() {  # DATN §4.1: BERTScore (PhoBERT) for VietNews, after eval;
   done
 }
 
-stage_analyze() {
+analyze_hypotheses() {  # the H1 and H2 runs; arguments are passed on to analyze.py
+  echo "## H1 — ViWord-C and the 2×2 design"
+  python scripts/analyze.py --rows results/eval/*.jsonl --target viword \
+    --reference llmlingua2vi truncation lead tfidf_sent \
+    --seed-mode aggregate --seeds $SEEDS \
+    --primary-reader "$PRIMARY_READER" --hypothesis H1 \
+    --holm-family "H1:tasks=vimmrc+belebele,ratios=0.5+0.333+0.2,reader=primary,test=metric" \
+    --factorial llmlingua2vi llmlingua2vi_wordpool viword_syl viword "$@"
+  echo
+  echo "## H2 — linguistic protection π"
+  # aggregate_seed_rows strips _s0/_s1/_s2, so these base names select the
+  # logical viword_pi_s*, viword_s*, and llmlingua2vi_force_s* rows in results/eval.
+  python scripts/analyze.py --rows results/eval/*.jsonl --target viword_pi \
+    --reference viword llmlingua2vi_force llmlingua2vi_forcectx \
+    --seed-mode aggregate --seeds $SEEDS \
+    --primary-reader "$PRIMARY_READER" --hypothesis H2 \
+    --holm-family "H2:tasks=vinli,ratios=0.5+0.333+0.2,reader=primary,test=nfr" "$@"
+}
+
+stage_analyze() {  # DATN §4.3: primary analysis without the rows readers scored before the test run
+  require_committed_exclusions
   log "analyze all seeds with seed-stratified bootstrap"
   {
-    echo "# H1 — ViWord-C and the 2×2 design"
-    python scripts/analyze.py --rows results/eval/*.jsonl --target viword \
-      --reference llmlingua2vi truncation lead tfidf_sent \
-      --seed-mode aggregate --seeds $SEEDS \
-      --primary-reader "$PRIMARY_READER" --hypothesis H1 \
-      --holm-family "H1:tasks=vimmrc+belebele,ratios=0.5+0.333+0.2,reader=primary,test=metric" \
-      --factorial llmlingua2vi llmlingua2vi_wordpool viword_syl viword
+    echo "# Primary analysis: test rows no reader scored before the test run ($TEST_EXCLUSIONS)"
     echo
-    echo "# H2 — linguistic protection π"
-    # aggregate_seed_rows strips _s0/_s1/_s2, so these base names select the
-    # logical viword_pi_s*, viword_s*, and llmlingua2vi_force_s* rows in results/eval.
-    python scripts/analyze.py --rows results/eval/*.jsonl --target viword_pi \
-      --reference viword llmlingua2vi_force llmlingua2vi_forcectx \
-      --seed-mode aggregate --seeds $SEEDS \
-      --primary-reader "$PRIMARY_READER" --hypothesis H2 \
-      --holm-family "H2:tasks=vinli,ratios=0.5+0.333+0.2,reader=primary,test=nfr"
+    analyze_hypotheses --exclude "$TEST_EXCLUSIONS"
+    echo
+    echo "# Sensitivity analysis: every test row"
+    echo
+    analyze_hypotheses
   } | tee results/analysis_3seed.md
 }
 

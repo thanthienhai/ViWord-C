@@ -557,8 +557,29 @@ Kiểm định:
   MDE_test = MDE_dev · √(số cụm dev / số cụm test); report ghi cả hai, hiệu ứng pilot và SD giữa ba seed vào
   `results/mde_dev/report.{md,json}`. Lề non-inferiority 0.5 điểm ROUGE-L phải lớn hơn MDE **test** và SD seed;
   `stage_eval` bị chặn nếu report không PASS, nếu report tính cho lề khác, hoặc tính theo tương phản H1 cũ.
-  Belebele hiện chỉ có split test trong dữ liệu chuẩn hoá, nên không được dùng thay cho dev và report phải đánh dấu
-  task này thiếu coverage MDE.
+  Số cụm test là số cụm của phân tích chính, tức đã bỏ các dòng test đã lộ (mục dưới); `stage_eval` từ chối report
+  tính với danh sách loại trừ khác. Belebele không có split dev; `belebele_dev` (mục dưới) chỉ dùng cho smoke và
+  precheck, nên report vẫn đánh dấu task này thiếu coverage MDE.
+- **Sửa đổi 22/10/2026: dòng test đã bị reader đọc trước khi chạy test.** Rà toàn bộ file kết quả (results/,
+  run_reports/, các gói trên repo kết quả HF) cho thấy reader đã chấm một số dòng test trong lúc phát triển. Mọi lần
+  đọc đều lấy các dòng đầu file (`--limit`):
+  - smoke 04/10 (`scripts/smoke_h100.sh`, reader chính Qwen2.5-7B): 200 câu đầu Belebele và 300 dòng đầu ViNLI test,
+    với đủ các tương phản H1/H2 (encoder smoke 1 epoch, bản tách từ trước sự cố 12/10; mọi p Holm = 1.0);
+  - smoke 20/10 và 21/10 của đội vận hành: SeaLLM-7B-v2 trên 50 câu đầu Belebele (tưởng là dev), precheck
+    `translate` với Qwen2.5-7B trên 20 câu đầu Belebele;
+  - các lần thử nhỏ (Qwen 0.5B/1.5B, SeaLLMs-v3-1.5B): tối đa 60 câu đầu Belebele và 20 dòng đầu mỗi tập test khác.
+
+  Không thành phần đăng ký trước nào bị đổi theo các số đó: họ H1, lưới và quy tắc chọn π, lề 0.5 và dự đoán phụ
+  về premise có phủ định đều có trong bản 03/10, trước smoke. Tuy vậy, từ sửa đổi này: (1) **phân tích chính**
+  chỉ dùng các dòng test chưa reader nào chấm trước lần chạy test, danh sách cố định trong
+  `config/test_exclusions.json` (commit trước part1; `stage_eval` và `stage_analyze` dừng nếu file chưa commit hoặc
+  không khớp dữ liệu): Belebele 700/900 câu (377/488 đoạn), ViNLI test 2.691/2.991 dòng (đủ 377 premise; 387 cặp có
+  premise phủ định, vẫn ≥ 300 của G2), ViMMRC test 406/426, VietNews test 980/1.000, ba tác vụ khám phá mỗi tập bớt
+  20 dòng; (2) **phân tích độ nhạy** chạy lại đúng các kiểm định trên toàn bộ tập test như đăng ký cũ, báo cáo cạnh
+  phân tích chính. Loại theo dòng, không theo cụm: bỏ cả 203 premise đã lộ chỉ còn 252 cặp có premise phủ định,
+  dưới ngưỡng G2. (3) Cận trên của thầy lấy 300 dòng đầu **chưa lộ** của mỗi tập. (4) 200 câu Belebele đã lộ thành
+  `belebele_dev`, chỉ dùng cho smoke và precheck, không cho quyết định nào. (5) `evaluate.py` từ chối cho reader chấm
+  một dòng test chưa lộ (so theo nội dung, nên bản chép đổi tên cũng bị chặn), trừ trong `stage_eval`.
 - Họ Holm được khai báo bằng `--holm-family NAME:tasks=…,ratios=…,reader=primary,test=metric|nfr`; mỗi lượt
   `analyze.py` kiểm định **một** giả thuyết (`--hypothesis H1|H2`) và chỉ hiệu chỉnh trong họ của giả thuyết đó;
   mọi p-value khác in thô. H1: `{ViMMRC, Belebele} × {1/2, 1/3, 1/5}`, test=metric. H2:

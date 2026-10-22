@@ -234,12 +234,16 @@ class Precomputed:
     def __init__(self, path: str, name: str = "precomputed", trim: bool = False):
         import json
 
-        self.name, self.trim = name, trim
+        self.name, self.trim, self.path = name, trim, path
         with open(path, encoding="utf-8") as f:
             self.table = {(r["id"], round(float(r["ratio"]), 3)): r["compressed"] for r in map(json.loads, f)}
 
     def compress(self, context, budget, counter):
-        text = self.table[(context.example_id, round(float(context.ratio), 3))]
+        key = (context.example_id, round(float(context.ratio), 3))
+        if key not in self.table:
+            raise KeyError(f"{self.path} has no compression of {key[0]} at ratio {key[1]}: the file does not "
+                           "cover these rows (for the teacher upper bound: run_pipeline.sh teacher_test)")
+        text = self.table[key]
         if self.trim:
             words = text.split()
             while words and counter.count(" ".join(words)) > budget:

@@ -75,6 +75,8 @@ pull_data() {  # data files added by the project owner after part1 (e.g. results
 
 check_data() {  # every data file must match the checksums committed with the code
   sha256sum --quiet -c data/SHA256SUMS || die "data differs from data/SHA256SUMS: wrong HF revision"
+  # Belebele has no dev split: belebele_dev holds the questions readers scored during development
+  python scripts/test_exclusions.py belebele-dev || die "cannot derive data/tasks/belebele_dev.jsonl"
   python scripts/check_segmented.py --directory data/segmented --segmenter vncorenlp \
     || die "segmented data is missing VnCoreNLP provenance or has been modified"
   echo "# $(date '+%F %T')" >> "$OUT/data_revision.txt"   # one block per part: the code may move in part3
@@ -94,9 +96,10 @@ precheck() {  # 20 dev examples of each task type that never ran on a GPU, with 
       --methods none no_context truncation tfidf_sent "scored:model=$LL2,unit=syllable,name=llmlingua2_syl" \
       --out "$OUT/precheck/${task}.jsonl"
   done
-  # translate-then-compress (llmlingua package) runs only in phase 2, on Belebele
-  python scripts/evaluate.py --task belebele --data data/tasks/belebele.jsonl \
-    --segmented data/segmented/belebele.jsonl --reader "$READER" --limit 20 \
+  # translate-then-compress (llmlingua package) runs only in phase 3, on Belebele; it is checked on
+  # belebele_dev (Belebele has no dev split; a reader never sees an unseen test row before phase 3)
+  python scripts/evaluate.py --task belebele --data data/tasks/belebele_dev.jsonl \
+    --segmented data/segmented/belebele_dev.jsonl --reader "$READER" --limit 20 \
     --methods none "translate:inner=llmlingua2" --out "$OUT/precheck/belebele_translate.jsonl"
   python - <<'EOF'
 import glob

@@ -25,7 +25,7 @@ def test_teacher_upper_bound_is_a_required_pre_eval_stage():
     text = PIPELINE.read_text(encoding="utf-8")
     assert "stage_teacher_test()" in text
     assert "bash scripts/run_pipeline.sh teacher_test before eval" in text
-    assert '--limit "$TEACHER_TEST_LIMIT" --methods "precomputed:path=$teacher_path,name=teacher_upper"' in text
+    assert '--limit "$TEACHER_TEST_LIMIT" \\\n      --methods "precomputed:path=$teacher_path,name=teacher_upper"' in text
 
 
 def test_readme_maps_every_section_43_ablation_row():

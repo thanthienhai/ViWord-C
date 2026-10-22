@@ -9,7 +9,8 @@ The dev pilot has fewer source clusters than the test sets, so every MDE is also
 projected to the test size: MDE_test = MDE_dev · sqrt(clusters_dev / clusters_test)
 (the standard error of a cluster mean shrinks with the square root of the number of
 clusters).  The gate compares the non-inferiority margin with the *test* MDE, because
-the margin is applied on test.
+the margin is applied on test.  With --exclude the test size is that of the primary analysis, which
+leaves out the test rows readers scored before the test run (DATN §4.3, amendment of 2026-10-22).
 """
 from __future__ import annotations
 
@@ -29,6 +30,8 @@ if str(REPO_ROOT) not in sys.path:
 
 from scripts.analyze import aggregate_seed_rows, paired, row_key
 from viword.data import read_jsonl
+from viword.heldout import excluded_ids, load_exclusions
+from viword.segment_meta import sha256_path
 
 H1_TARGET, H1_REFERENCE = "viword", "llmlingua2vi"
 from viword.stats import minimum_detectable_effect
@@ -130,14 +133,16 @@ def _nfr_effect(task: str, ratio: float, pi_rows: list[dict], base_rows: list[di
     }
 
 
-def count_test_clusters(specs: list[str]) -> dict[str, int]:
-    """Parse TASK=PATH specs and count distinct source clusters in each test file."""
+def count_test_clusters(specs: list[str], exclusions: dict | None = None) -> dict[str, int]:
+    """Parse TASK=PATH specs and count distinct source clusters in each test file, without the rows
+    readers scored before the test run when `exclusions` is given (the primary analysis drops them)."""
     counts = {}
     for spec in specs:
         task, _, path = spec.partition("=")
         if not task or not path:
             raise ValueError(f"invalid --test-data {spec!r}; expected TASK=PATH")
-        counts[task] = len({row["cluster"] for row in read_jsonl(path)})
+        skip = excluded_ids(exclusions, path) if exclusions else set()
+        counts[task] = len({row["cluster"] for row in read_jsonl(path) if row["id"] not in skip})
     return counts
 
 
@@ -298,12 +303,19 @@ def main() -> None:
     parser.add_argument("--margin-points", type=float, default=0.5)
     parser.add_argument("--test-data", nargs="+", default=[],
                         help="TASK=PATH of the test files, to project the MDE to the test size")
+    parser.add_argument("--exclude", default=None,
+                        help="config/test_exclusions.json: count test clusters without the rows readers scored "
+                             "before the test run, as the primary analysis does; --verify then requires a "
+                             "report computed with this file")
     parser.add_argument("--verify", help="verify an existing JSON report before test evaluation")
     args = parser.parse_args()
     if args.verify:
         report = json.loads(Path(args.verify).read_text(encoding="utf-8"))
         if not report.get("dev_only") or not report.get("passed"):
             raise SystemExit(f"mde: refusing test evaluation; MDE report is not PASS: {args.verify}")
+        if args.exclude and report.get("test_exclusions_sha256") != sha256_path(args.exclude):
+            raise SystemExit(f"mde: report was not projected to the test rows left by {args.exclude}; "
+                             "recompute it (run_pipeline.sh mde)")
         reported = report.get("rouge_margin_check", {}).get("margin_points")
         if reported is None or abs(float(reported) - args.margin_points) > 1e-9:
             raise SystemExit(f"mde: report was computed for margin {reported}, but eval uses "
@@ -321,8 +333,11 @@ def main() -> None:
         parser.error("MDE requires exactly three --seeds")
     try:
         rows = [row for path in args.rows if not path.endswith(".compressed.jsonl") for row in read_jsonl(path)]
+        exclusions = load_exclusions(args.exclude) if args.exclude else None
         result = compute(rows, args.seeds, args.reader, args.n_boot, args.margin_points,
-                         count_test_clusters(args.test_data))
+                         count_test_clusters(args.test_data, exclusions))
+        if args.exclude:
+            result["test_exclusions_sha256"] = sha256_path(args.exclude)
         write_outputs(result, args.out, args.report)
     except (KeyError, ValueError, FileNotFoundError) as exc:
         raise SystemExit(f"mde: {exc}") from exc

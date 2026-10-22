@@ -95,8 +95,17 @@ baseline trên đa số dev set (cùng quy tắc đa số với G4); `llmlingua2
 `mde` chạy trước `eval` trên các split dev, dùng cùng ba seed và bootstrap phân tầng seed → cụm. Nó ghi
 `results/mde_dev/report.{md,json}`: MDE và độ lệch chuẩn seed cho H1, NFR H2 trên ViNLI, cùng ROUGE-L H2 trên
 VietNews. Lề non-inferiority 0,5 điểm ROUGE-L phải lớn hơn cả MDE và SD giữa seed; `stage_eval` gọi `--verify` và
-dừng nếu report không PASS. Belebele hiện không có split dev trong nguồn chuẩn hoá, nên report ghi rõ H1 dev coverage
-chỉ gồm ViMMRC và không thay bằng mẫu test.
+dừng nếu report không PASS. Belebele không có split dev trong nguồn chuẩn hoá; `belebele_dev` chỉ dùng cho smoke và
+precheck, nên report ghi rõ H1 dev coverage chỉ gồm ViMMRC và không thay bằng mẫu test.
+
+**Dòng test đã lộ (DATN §4.3, sửa đổi 22/10/2026).** Reader đã chấm các dòng đầu của vài tập test trong lúc phát
+triển (smoke, precheck, chạy thử). `config/test_exclusions.json` (sinh bằng `scripts/test_exclusions.py write`, kèm
+nguồn gốc từng lần đọc) liệt kê chúng; phân tích chính (`analyze.py --exclude`) bỏ các dòng này, phân tích độ nhạy
+dùng toàn bộ tập test, `stage_analyze` in cả hai. `mde.py --exclude` quy MDE về cỡ test của phân tích chính, cận
+trên của thầy lấy 300 dòng đầu chưa lộ. 200 câu Belebele đã lộ thành `data/{tasks,segmented}/belebele_dev.jsonl`,
+sinh tại chỗ bằng `scripts/test_exclusions.py belebele-dev` (ops `check_data`, `run_pipeline.sh segment`).
+`evaluate.py` từ chối cho reader chấm một dòng test chưa lộ, so theo nội dung (`viword/heldout.py`), trừ trong
+`stage_eval` (biến `VIWORD_TEST_EVAL=1`).
 
 `stage_analyze` không còn xuất kết quả từng seed riêng. Nó gọi
 `analyze.py --seed-mode aggregate --seeds 0 1 2`, ghép các method hậu tố `_s0/_s1/_s2` theo cùng task, reader,
@@ -192,22 +201,25 @@ Một lần chạy = một tác vụ × một reader. Bước nén và bước �
 lưu lại (`*.compressed.jsonl`) để tái sử dụng. Reader có ba backend: `vllm` (mặc định), `api` (server tương thích
 OpenAI, thêm `--base-url` và `--tokenizer`), `hf` (transformers, cho smoke test). Không dùng LLM thầy làm reader.
 
+Ngoài `stage_eval`, reader chỉ được đọc dev, nên ví dụ dưới dùng `belebele_dev`:
+
 ```bash
-python scripts/evaluate.py --task belebele --data data/tasks/belebele.jsonl \
-    --segmented data/segmented/belebele.jsonl --reader Qwen/Qwen2.5-7B-Instruct \
+python scripts/evaluate.py --task belebele --data data/tasks/belebele_dev.jsonl \
+    --segmented data/segmented/belebele_dev.jsonl --reader Qwen/Qwen2.5-7B-Instruct \
     --methods none no_context lead truncation llmlingua2 translate:inner=llmlingua2 \
         scored:model=runs/llmlingua2vi_s0,unit=syllable,name=llmlingua2vi_s0 \
         scored:model=runs/llmlingua2vi_s0,unit=word,name=llmlingua2vi_wordpool_s0 \
         scored:model=runs/viword_s0,unit=word,name=viword_s0 \
         scored:model=runs/viword_s0,unit=word,protect=soft,delta=0.2,name=viword_pi_s0 \
-    --out results/eval/belebele_qwen7b.jsonl
+    --out results/dev/belebele_dev_qwen7b.jsonl
 
+# test rows of stage_eval; --exclude = primary analysis, without it = sensitivity analysis
 python scripts/analyze.py --rows results/eval/*.jsonl --target viword \
     --reference llmlingua2vi truncation lead tfidf_sent \
     --seed-mode aggregate --seeds 0 1 2 \
     --primary-reader Qwen/Qwen2.5-7B-Instruct \
     --holm-family 'H1:tasks=vimmrc+belebele,ratios=0.5+0.333+0.2,reader=primary' \
-    --factorial llmlingua2vi llmlingua2vi_wordpool viword_syl viword
+    --factorial llmlingua2vi llmlingua2vi_wordpool viword_syl viword --exclude config/test_exclusions.json
 ```
 
 `--holm-family` khai báo họ giả thuyết theo cú pháp

@@ -2,7 +2,9 @@
 
 **Mục đích:** chạy thử một lần toàn bộ đường chạy (kiểm tra thầy → dựng nhãn → huấn luyện → đánh giá) trên một GPU
 lớn, để chắc mã nguồn chạy được và xem trước xu hướng. Quy mô nhỏ: 1 seed, 1 epoch, khoảng 1.500 đoạn huấn luyện,
-200 câu Belebele, 300 cặp ViNLI. **Số liệu không dùng cho bài báo.**
+200 câu `belebele_dev`, 300 cặp ViNLI dev. **Số liệu không dùng cho bài báo.** Smoke không đọc tập test nào:
+Belebele không có split dev, nên `belebele_dev` là các câu Belebele đã bị đọc trong lúc phát triển và đã được loại
+khỏi phân tích test.
 
 **Tóm tắt:** clone code → đăng nhập Hugging Face → chạy **một lệnh** trong `tmux` (khoảng 1–1,5 giờ) → nén thư mục
 `results/smoke/` và gửi lại. Không cần sửa code hay cấu hình gì.

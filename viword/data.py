@@ -66,9 +66,14 @@ def load_task(name: str, path: str, limit: int | None = None) -> list[Example]:
     gsm8k:    {id, cluster, context (demonstrations), question, answer}
     oneruler: {id, cluster, context, template, answers, subtask}   (template contains "{context}")
     """
+    return examples_from_rows(name, read_jsonl(path)[:limit])
+
+
+def examples_from_rows(name: str, rows: list[dict]) -> list[Example]:
+    """`load_task` on rows already read (e.g. after dropping excluded test rows)."""
     task = TASKS[name]
     examples = []
-    for r in read_jsonl(path)[:limit]:
+    for r in rows:
         if task == "summ":
             ex = Example(r["id"], r["cluster"], task, r["context"], answer=r["reference"])
         elif task == "nli":

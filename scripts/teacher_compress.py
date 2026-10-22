@@ -30,6 +30,7 @@ from tqdm import tqdm
 
 from viword.data import read_jsonl
 from viword.distill import teacher_compress
+from viword.heldout import excluded_ids, load_exclusions
 
 
 def load_dotenv(path: str = ".env") -> dict[str, str]:
@@ -97,6 +98,9 @@ def main():
     ap.add_argument("--model", default=os.environ.get("TEACHER_MODEL"))
     ap.add_argument("--workers", type=int, default=16)
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--exclude", default=None,
+                    help="config/test_exclusions.json: skip the test rows readers scored during development "
+                         "before --limit, as evaluate.py --exclude does for the teacher upper bound")
     ap.add_argument("--max-tokens", type=int, default=4096,
                     help="output cap per call; a call that reaches it fails instead of keeping a cut-off text")
     args = ap.parse_args()
@@ -111,7 +115,11 @@ def main():
 
     # identical texts (e.g. one ViMMRC passage with several questions) are compressed once
     ids_of_text = {}
-    for r in read_jsonl(args.input)[:args.limit]:
+    rows = read_jsonl(args.input)
+    if args.exclude:
+        skip = excluded_ids(load_exclusions(args.exclude), args.input)
+        rows = [r for r in rows if r["id"] not in skip]
+    for r in rows[:args.limit]:
         ids_of_text.setdefault(r[args.field], []).append(r["id"])
     jobs = [(ids, text, rate) for text, ids in ids_of_text.items() for rate in args.rates
             if any((i, rate) not in done for i in ids)]

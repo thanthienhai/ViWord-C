@@ -26,6 +26,9 @@ Usage:
 
   H2: --target viword_pi --reference viword llmlingua2vi_force --hypothesis H2
       (default family H2:tasks=vinli,ratios=0.5+0.333+0.2,reader=primary,test=nfr)
+
+  --exclude config/test_exclusions.json: the primary analysis, on the test rows no reader scored before the
+  test run (DATN §4.3, amendment of 2026-10-22); without it, every row (the sensitivity analysis).
 """
 import argparse
 from collections import defaultdict
@@ -34,6 +37,7 @@ import re
 import numpy as np
 
 from viword.data import read_jsonl
+from viword.heldout import drop_excluded, load_exclusions
 from viword.eval import BUDGET_DEVIATION_THRESHOLD, MAIN_METRIC, budget_deviates, tokens_per_budget
 from viword.stats import (cluster_bootstrap, cluster_bootstrap_slope, flip_rate_test, holm, mcnemar_exact_one_sided,
                           non_inferiority, non_inferiority_stratified, paired_test,
@@ -260,9 +264,18 @@ def main():
                     help="H1 mechanism (DATN §2.3): regress the per-example gain target − SYLLABLE_SYSTEM "
                          "on the per-example CBR of SYLLABLE_SYSTEM")
     ap.add_argument("--n-boot", type=int, default=10_000)
+    ap.add_argument("--exclude", default=None,
+                    help="config/test_exclusions.json: drop the test rows readers scored before the test run")
     args = ap.parse_args()
     # results/eval/*.jsonl also matches evaluate.py's compression caches, which are not result rows
     rows = [r for path in args.rows if not path.endswith(".compressed.jsonl") for r in read_jsonl(path)]
+    if args.exclude:
+        kept = drop_excluded(rows, load_exclusions(args.exclude))
+        print(f"Rows: test rows no reader scored before the test run ({len(rows) - len(kept)} of {len(rows)} "
+              f"result rows dropped, {args.exclude}).\n")
+        rows = kept
+    else:
+        print("Rows: every result row.\n")
     if args.seed_mode == "aggregate":
         if len(args.seeds) != 3:
             ap.error("--seed-mode aggregate requires exactly three --seeds")

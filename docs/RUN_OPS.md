@@ -28,6 +28,9 @@ Lý do phải dừng giữa các phần:
   **không chạy `scripts/bertscore_local.sh`**, kể cả để chạy thử, và không cài Java trên máy GPU. Reader thứ hai là `SeaLLMs/SeaLLM-7B-v2` (không gated) thay cho Vistral, nên token chỉ
   cần quyền đọc repo dữ liệu.
 - **Tải lại `ops_full_run.sh` trước mỗi phần.** Bản cũ không có `part3` và không kiểm tra dữ liệu mới.
+- **Không cho reader đọc tập test trước phần 3**, kể cả khi chạy thử. Smoke và precheck dùng tập dev; Belebele
+  không có dev nên dùng `data/tasks/belebele_dev.jsonl` (`check_data` tự sinh). `evaluate.py` từ chối các dòng test
+  chưa lộ (`refusing to let a reader score ... test row(s)`); không tìm cách vượt qua, chỉ `phase3` được đọc chúng.
 - Hai cổng `ckpt_check` (phần 1) và `mde` (phần 2) có thể dừng với kết quả `FAIL`. Đó là kết quả nghiên cứu, không phải
   lỗi máy (mục 5).
 
@@ -46,7 +49,7 @@ với thông báo ở mục 5.
 | 1 | gán nhãn và commit hai phiếu mù `data/annot/protect_sheet.jsonl`, `probe_sheet.jsonl` | phần 1: `diagnose` lỗi (không chặn); phần 2: dừng | **xong** (`protect_eval` hợp lệ, G6 đạt) |
 | 1 | tạo repo private `thanthienhai/viword-c-results` và token chỉ ghi repo đó (`HF_RESULTS_TOKEN`) | gói kết quả phải gửi tay (mục 4c) | **xong** (repo tạo 21/10; token của đội vận hành cần quyền ghi repo này) |
 | 3 | commit `config/pi_selected.{json,env}` (lấy từ file `.tgz` của phần 2) | `update_code` dừng | chờ phần 2 |
-| 3 | sinh cận trên của thầy trên test (`results/teacher_test`), đẩy lên Hugging Face, cập nhật `data/SHA256SUMS` | `check_data_part3` hoặc `eval` dừng | **xong** (7 tập × 300 mẫu) |
+| 3 | sinh cận trên của thầy trên test (`results/teacher_test`), đẩy lên Hugging Face, cập nhật `data/SHA256SUMS` | `check_data_part3` hoặc `eval` dừng | **cần sinh lại** (22/10): 300 dòng đầu *chưa lộ* của mỗi tập (DATN §4.3) |
 
 Đến 20/10, phần 1 và phần 2 không còn bị chặn; phần 3 chỉ còn chờ chủ đề tài commit π sau phần 2. Các bước trên đã
 chạy thử trên 2× T4 (tải và kiểm tra dữ liệu HF, `protect_eval`, cận trên của thầy trên cả 7 tập test).
@@ -95,8 +98,8 @@ Script tự làm lần lượt các bước sau:
 |---|---|---|
 | clone | clone code vào `WORKDIR` | < 1 phút |
 | `setup` | tạo `.venv`, cài torch / transformers / vLLM / llmlingua / bert_score / py_vncorenlp, chạy unit test (vài test cần dữ liệu được bỏ qua, `skipped` là bình thường), kiểm tra GPU, tải dữ liệu từ Hugging Face | 10–15 phút |
-| `check_data` | so từng file dữ liệu với `data/SHA256SUMS` trong code, kiểm tra nguồn gốc tách từ (VnCoreNLP); ghi phiên bản code và dữ liệu | 1 phút |
-| `precheck` | chạy thử 20 mẫu cho mỗi tác vụ mới (ViQuAD, GSM8K, OneRuler) và translate-then-compress trên Belebele | 15–20 phút |
+| `check_data` | so từng file dữ liệu với `data/SHA256SUMS` trong code, sinh `belebele_dev`, kiểm tra nguồn gốc tách từ (VnCoreNLP); ghi phiên bản code và dữ liệu | 1 phút |
+| `precheck` | chạy thử 20 mẫu dev cho mỗi tác vụ mới (ViQuAD, GSM8K, OneRuler) và translate-then-compress trên `belebele_dev` | 15–20 phút |
 | `diagnose` | đánh giá bộ phát hiện P trên phiếu đã gán nhãn; chẩn đoán G1, G2, G5 trên Belebele và ViNLI | 30–45 phút |
 | `gate_eval` | cổng G1/G2/G3 trên 3 tập dev (13 bộ nén, thêm probe trên ViNLI, × 3 tỉ lệ) | 30–60 phút |
 | `distill`, `train` | dựng nhãn; huấn luyện 6 encoder (3 seed × 2 loại nhãn, 3 epoch) | 3,5–4 giờ |
@@ -223,7 +226,9 @@ Các lỗi khác:
 | `missing annotator for`, `gold_tiers not filled in`, `labels must come from a blind sheet`, `missing results/protect_eval.json` | chủ đề tài chưa điền xong phiếu mù. Ở phần 1 chỉ ghi vào `FAILED_STEPS`; ở phần 2 thì báo chủ đề tài, chờ, rồi chạy lại `part2` |
 | `config/pi_selected.* is not committed at origin/main` | chủ đề tài chưa commit π. Báo chủ đề tài, chờ, rồi chạy lại `part3` |
 | `cannot fast-forward the code` | code trên máy đã bị sửa hoặc lịch sử `main` bị viết lại. Gửi file `-FAILED.tgz`; không tự `git reset` |
-| `missing results/teacher_test/...` | chủ đề tài chưa đẩy cận trên của thầy lên Hugging Face. Báo chủ đề tài, chờ, rồi chạy lại `part3` |
+| `missing results/teacher_test/...` hoặc `has no compression of ... at ratio` | chủ đề tài chưa đẩy cận trên của thầy (bản cho dòng chưa lộ) lên Hugging Face. Báo chủ đề tài, chờ, rồi chạy lại `part3` |
+| `refusing to let a reader score ... test row(s)` | một bước ngoài `phase3` định cho reader đọc tập test. Không chạy tiếp bằng cách khác; gửi log cho chủ đề tài |
+| `test_exclusions.json must be committed` hoặc `test exclusions: ...` | danh sách dòng test đã lộ bị sửa trên máy hoặc không khớp dữ liệu. Gửi file `-FAILED.tgz`; không tự sửa |
 | `unit tests did not all pass` | gửi file `-FAILED.tgz` (có `setup.log`) |
 | `no GPU visible` | kiểm tra `nvidia-smi` và biến `GPU=<id>` |
 | lỗi cài `vllm` / `torch` (xung đột CUDA) | gửi file `-FAILED.tgz` và kết quả `nvidia-smi`; không tự đổi phiên bản |
@@ -275,8 +280,17 @@ sao cho `sha256sum -c data/SHA256SUMS` đúng trên bản Hugging Face. Gán nh�
 # 1. π: lấy hai file từ viword_part2_*.tgz, xem pi_selection.md, rồi commit đúng nguyên văn
 mkdir -p config && cp <giải nén>/results/full/pi_selected.{json,env} config/
 git add config/pi_selected.json config/pi_selected.env && git commit -m "Select π on dev" && git push
-# 2. cận trên của thầy trên test (results/teacher_test): đã xong 19/10, đã có trên Hugging Face
+# 2. cận trên của thầy trên test: 300 dòng đầu chưa lộ của mỗi tập (DATN §4.3, sửa đổi 22/10). Bản 19/10 lấy
+#    300 dòng đầu, trùng phần đã lộ; chạy lại (resume: chỉ gọi thầy cho các dòng còn thiếu), rồi đẩy lên HF
+bash scripts/run_pipeline.sh teacher_test        # cần TEACHER_URL (.env)
+sha256sum results/teacher_test/*.jsonl            # thay 7 dòng results/teacher_test/* trong data/SHA256SUMS
+python scripts/hf_data.py push --repo thanthienhai/viword-c-data
+git add data/SHA256SUMS && git commit -m "Data: teacher upper bound on unseen test rows" && git push
 ```
+
+`config/test_exclusions.json` (các dòng test reader đã chấm trong lúc phát triển) đã commit từ 22/10, trước
+phần 1. Nếu phát hiện thêm một lần đọc test, ghi nó vào `EXPOSURES` trong `scripts/test_exclusions.py`, chạy
+`python scripts/test_exclusions.py write` và commit **trước** phần 3; sau phần 3 không được sửa danh sách này.
 
 **Trước phần 1.** Tạo repo dataset private `thanthienhai/viword-c-results` và một token fine-grained chỉ có quyền ghi
 repo đó; đưa token cho đội vận hành làm `HF_RESULTS_TOKEN`. Repo dữ liệu vẫn chỉ cần quyền đọc.
