@@ -5,8 +5,13 @@ For every ``viword_pi_*`` candidate, this script:
 
 * compares VietNews ROUGE-L with the same-seed ``viword_s*`` (π = none);
 * computes ViNLI NFR as prediction flips against ``none`` at ratio 1.0;
-* keeps candidates whose ROUGE-L loss is at most 0.5 points;
+* keeps candidates whose ROUGE-L loss is at most 0.5 points at every ratio;
 * selects the lowest-NFR candidate, with narrower protection as the tie-break.
+
+When no candidate keeps the loss within the margin at every ratio (rule fixed on 2026-10-23,
+before any official dev run; DATN §2.3), the candidate with the smallest worst-ratio loss is
+selected (tie: lower NFR, then narrower protection) and marked as not meeting the margin. H2 is
+still tested on test as registered; the decision records that the dev margin was not met.
 
 It writes both a machine-readable JSON decision and a shell environment file.  The
 pipeline sources the latter before test evaluation, so a stale/default DELTA or TIERS
@@ -179,10 +184,6 @@ def select(rows: list[dict], margin_points: float = MARGIN_POINTS) -> dict:
     for candidate in candidates:
         candidate["feasible"] = candidate["max_rouge_loss_points"] <= margin_points + 1e-12
 
-    feasible = [row for row in candidates if row["feasible"]]
-    if not feasible:
-        raise ValueError(f"no π configuration satisfies ROUGE-L loss <= {margin_points} points at every ratio")
-
     def sort_key(row):
         # DATN tie-break: protect fewer words. The tier grid is nested (T1 ⊂ T1+T2 ⊂
         # T1+T2+T3) and soft/hard share P for the same tiers, so fewer tiers is exactly
@@ -190,12 +191,21 @@ def select(rows: list[dict], margin_points: float = MARGIN_POINTS) -> dict:
         return (row["nfr"], len(row["tiers"]), 0 if row["mode"] == "soft" else 1,
                 row["delta"], row["tier_tag"])
 
-    selected = min(feasible, key=sort_key)
+    def fallback_key(row):
+        # no candidate meets the margin: the smallest worst-ratio ROUGE-L loss, then the usual order
+        return (row["max_rouge_loss_points"],) + sort_key(row)
+
+    feasible = [row for row in candidates if row["feasible"]]
+    meets_margin = bool(feasible)
+    selected = min(feasible, key=sort_key) if meets_margin else min(candidates, key=fallback_key)
     return {
         "schema": 1,
         "reader": readers[0] if readers else None,
         "selection_rule": ("minimize ViNLI NFR subject to VietNews ROUGE-L loss <= margin at every ratio; "
-                           "tie: fewer protected words (= fewer tiers in the nested grid)"),
+                           "tie: fewer protected words (= fewer tiers in the nested grid). If no configuration "
+                           "meets the margin: smallest worst-ratio ROUGE-L loss, then the same order "
+                           "(rule of 2026-10-23, DATN §2.3)"),
+        "meets_margin": meets_margin,
         "rouge_reference": "viword_s* (same seed, π=none)",
         "nfr_reference": "none (uncompressed, ratio=1.0)",
         "rouge_margin_points": margin_points,
@@ -214,7 +224,7 @@ def select(rows: list[dict], margin_points: float = MARGIN_POINTS) -> dict:
         },
         "candidates": [
             {key: value for key, value in row.items() if key not in {"method", "seed"}}
-            for row in sorted(candidates, key=sort_key)
+            for row in sorted(candidates, key=sort_key if meets_margin else fallback_key)
         ],
     }
 
@@ -229,6 +239,16 @@ def render_report(decision: dict) -> str:
         f"ROUGE-L reference: `{decision['rouge_reference']}`; margin: **{decision['rouge_margin_points']:.3f} points**  ",
         f"NFR reference: `{decision['nfr_reference']}`",
         "",
+    ]
+    if not decision.get("meets_margin", True):
+        lines += [
+            f"**No configuration keeps the ROUGE-L loss within {decision['rouge_margin_points']:.3f} points at every "
+            f"ratio.** The selected one has the smallest worst-ratio loss "
+            f"({selected['max_rouge_loss_points']:+.3f} points); H2 is still tested on test as registered, and this "
+            "dev result is reported with it.",
+            "",
+        ]
+    lines += [
         "| mode | tiers | δ | ROUGE-L loss, mean (points) | ROUGE-L loss, worst ratio | NFR | ROUGE pairs | NFR pairs | feasible |",
         "|---|---|---:|---:|---:|---:|---:|---:|---|",
     ]
@@ -265,6 +285,8 @@ def write_outputs(decision: dict, out_json: str, out_report: str, out_env: str) 
         f"PI_MODE={selected['mode']}\n"
         f"PI_TIERS='{tiers}'\n"
         f"PI_DELTA={selected['delta']:.3f}\n"
+        "# 1: within the ROUGE-L margin at every dev ratio; 0: smallest worst-ratio loss (no configuration met it)\n"
+        f"PI_MEETS_MARGIN={1 if decision.get('meets_margin', True) else 0}\n"
     )
     Path(out_env).write_text(env, encoding="utf-8")
 

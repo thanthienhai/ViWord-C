@@ -134,9 +134,10 @@ bash ops_full_run.sh part2
 
 | Bước (trong `full.log`) | Việc | Thời gian ước tính |
 |---|---|---|
+| `update_code_part2` | cập nhật code trong `WORKDIR` lên `main` mới nhất (chỉ fast-forward) và ghi các file đã đổi | 1–3 phút |
 | `check_data_part2` | kiểm tra lại dữ liệu | 1 phút |
 | `diagnose` | đánh giá P và probe trên phiếu mù; chẩn đoán G1/G2/G5, thêm 3 checkpoint LLMLingua-2-vi | 45–60 phút |
-| `select_pi` | chọn π trên dev: 49 cấu hình × 3 tỉ lệ × ~1.200 mẫu dev | 1–2,5 giờ |
+| `select_pi` | chọn π trên dev: 49 cấu hình × 3 tỉ lệ × ~1.200 mẫu dev. Không cấu hình nào đạt lề ROUGE-L thì vẫn chọn một cấu hình và chạy tiếp (`PI_MEETS_MARGIN=0`), không phải lỗi | 1–2,5 giờ |
 | `mde` | ước lượng hiệu ứng nhỏ nhất phát hiện được (MDE) trên dev | 15–30 phút |
 
 **Thành công** khi `full.log` có dòng `Phase 2 done` và dòng cuối của `ops_part2.log` là `Uploaded: ...`

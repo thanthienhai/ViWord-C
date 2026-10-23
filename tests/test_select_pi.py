@@ -107,10 +107,36 @@ def test_select_pi_aggregates_the_same_grid_point_across_seeds():
     assert decision["selected"]["n_nfr_pairs"] == 12
 
 
-def test_select_pi_fails_when_every_candidate_breaks_rouge_margin():
+def test_select_pi_falls_back_to_the_smallest_worst_loss_when_no_candidate_meets_the_margin(tmp_path):
+    # rule A of 2026-10-23: no candidate within 0.5 points at every ratio -> smallest worst-ratio loss
     rows = selection_rows()
+    losses = {"viword_pi_soft_T1_d0p1_s0": 0.790, "viword_pi_hard_T1_d0_s0": 0.770,
+              "viword_pi_soft_T1_T2_d0p2_s0": 0.780}  # losses of 1.0, 3.0 and 2.0 points
     for row in rows:
+        if row["method"] in losses and row["task"] == "vietnews":
+            row["rougeL"] = losses[row["method"]]
+    decision = select(rows)
+    assert not decision["meets_margin"]
+    assert (decision["selected"]["mode"], decision["selected"]["tiers"]) == ("soft", ["T1"])
+    assert decision["selected"]["max_rouge_loss_points"] == pytest.approx(1.0)
+    assert decision["candidates"][0]["tier_tag"] == "T1" and not decision["candidates"][0]["feasible"]
+    out_json, out_report, out_env = (tmp_path / name for name in ("selected.json", "report.md", "selected.env"))
+    write_outputs(decision, str(out_json), str(out_report), str(out_env))
+    assert "PI_MEETS_MARGIN=0" in out_env.read_text(encoding="utf-8")
+    assert "No configuration keeps the ROUGE-L loss" in out_report.read_text(encoding="utf-8")
+
+
+def test_select_pi_breaks_a_tie_in_worst_loss_by_nfr():
+    rows = selection_rows()
+    for row in rows:  # every candidate loses 2.0 points: the soft T1 candidate flips one pair, the others none
         if row["method"].startswith("viword_pi_") and row["task"] == "vietnews":
-            row["rougeL"] = 0.7
-    with pytest.raises(ValueError, match="no π configuration"):
-        select(rows)
+            row["rougeL"] = 0.78
+    decision = select(rows)
+    assert not decision["meets_margin"]
+    assert decision["selected"]["nfr"] == 0.0 and decision["selected"]["tiers"] == ["T1"]
+    assert decision["selected"]["mode"] == "hard"
+
+
+def test_a_feasible_candidate_is_marked_as_meeting_the_margin():
+    decision = select(selection_rows())
+    assert decision["meets_margin"] and decision["selected"]["mode"] == "hard"

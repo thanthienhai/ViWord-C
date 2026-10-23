@@ -166,6 +166,10 @@ Không dùng `mean_{s∈w} σ(ℓ_s)`. Quy ước này áp dụng cho mọi ô 2
     dev không giảm quá 0.5 điểm so với `none` **ở mọi tỉ lệ nén** (xét tỉ lệ tệ nhất, vì kiểm định
     non-inferiority trên test chạy riêng từng tỉ lệ), chọn cấu hình có NFR trên dev thấp nhất; hoà thì chọn cấu hình
     bảo vệ ít từ hơn (lưới tầng lồng nhau T1 ⊂ T1+T2 ⊂ T1+T2+T3, nên ít tầng hơn đúng là ít từ hơn). Chỉ cấu hình này được kiểm định trên test; các cấu hình khác là khám phá (§4.4).
+    *Khi không cấu hình nào đạt lề (quy tắc ghi ngày 23/10/2026, trước lần chạy dev chính thức):* chọn cấu hình
+    có mức giảm ROUGE-L ở tỉ lệ tệ nhất nhỏ nhất; hoà thì NFR thấp hơn, rồi bảo vệ ít từ hơn. H2 vẫn được kiểm
+    định trên test như đăng ký, và bài ghi rõ cấu hình này không đạt lề trên dev (`meets_margin: false` trong
+    `config/pi_selected.json`). Smoke 21/10 (1 epoch, 30 mẫu) đã gặp trường hợp này.
   - *Lề non-inferiority:* lề 0.5 ROUGE-L được cố định trước khi chạy test. Lề phải lớn hơn độ lệch chuẩn giữa 3
     seed trên dev và lớn hơn MDE **quy về cỡ tập test** (§4.3); nếu không, nới lề và ghi rõ lý do trước khi chạy
     test.
@@ -408,8 +412,10 @@ Cho tokenizer đích T và ngân sách B_T (token của T, chỉ tính **phần 
 - **Chọn cấu hình π:** `scripts/select_pi.py` quét `T1`, `T1+T2`, `T1+T2+T3` × `soft|hard` × δ (`0.1, 0.2,
   0.3, 0.5`; `hard` dùng δ=0) trên 500 mẫu ViNLI + 500 VietNews dev cho từng seed đã chạy. ROUGE-L VietNews
   được so với cùng checkpoint `viword_s*` ở π=`none`; NFR ViNLI là tỉ lệ lật dự đoán so với `none` không nén.
-  Loại cấu hình mất quá 0.5 điểm ROUGE-L, rồi chọn NFR thấp nhất; hoà thì chọn ít tầng bảo vệ hơn. Quyết định
-  được ghi vào `config/pi_selected.json`/`.env` và phải được commit trước `stage_eval`; test chỉ dùng cấu hình đó.
+  Loại cấu hình mất quá 0.5 điểm ROUGE-L ở bất kỳ tỉ lệ nào, rồi chọn NFR thấp nhất; hoà thì chọn ít tầng bảo
+  vệ hơn. Nếu không cấu hình nào đạt, chọn cấu hình có mức mất ở tỉ lệ tệ nhất nhỏ nhất (§2.3, quy tắc 23/10) và
+  ghi `meets_margin: false`, `PI_MEETS_MARGIN=0`. Quyết định được ghi vào `config/pi_selected.json`/`.env` và
+  phải được commit trước `stage_eval`; test chỉ dùng cấu hình đó.
 - Đổi T chỉ đổi c_T, không cần huấn luyện lại.
 - Novelty: *Lost in Compression* **đánh giá** với ngân sách khớp tokenizer đích; ta **đưa chi phí đó vào bước
   chọn**.

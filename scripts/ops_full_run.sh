@@ -182,14 +182,27 @@ part2() {
   log "part2: code $(git rev-parse --short HEAD), GPU $GPU"
   # shellcheck disable=SC1091
   source .venv/bin/activate
+  # the dev decisions run on the latest code: a rule fixed after part1 started must reach them
+  rm -f "$OUT/.done_update_code_part2"
+  run update_code_part2 pull_code
+  log "part2: code now $(git rev-parse --short HEAD)"
   run check_data_part2 check_data
   bash scripts/full_h100.sh phase2 || { pack "$PART-FAILED"; die "phase 2 failed, see $OUT/full.log"; }
   pack part2
 }
 
-update_code() {  # fast-forward to the commit with the π chosen in part2; log what else changed
+pull_code() {  # fast-forward to origin/$CODE_REF, log what changed, refresh the dependencies
   local before after
   before=$(git rev-parse HEAD)
+  git fetch -q origin "$CODE_REF"
+  git merge -q --ff-only FETCH_HEAD || die "cannot fast-forward the code to origin/$CODE_REF: ask the project owner"
+  after=$(git rev-parse HEAD)
+  echo "code $before -> $after"
+  git diff --stat "$before" "$after"
+  pip install -q -e ".[seg,model,eval,baselines,dev]"   # in case the dependencies changed
+}
+
+update_code() {  # fast-forward to the commit with the π chosen in part2; log what else changed
   # select_pi wrote config/pi_selected.* here; keep that copy, the committed one replaces it
   mkdir -p "$OUT/pi_selected_part2"
   for f in config/pi_selected.json config/pi_selected.env; do
@@ -197,18 +210,13 @@ update_code() {  # fast-forward to the commit with the π chosen in part2; log w
       mv "$f" "$OUT/pi_selected_part2/"
     fi
   done
-  git fetch -q origin "$CODE_REF"
-  git merge -q --ff-only FETCH_HEAD || die "cannot fast-forward the code to origin/$CODE_REF: ask the project owner"
-  after=$(git rev-parse HEAD)
-  echo "code $before -> $after"
-  git diff --stat "$before" "$after"
+  pull_code
   git ls-files --error-unmatch config/pi_selected.json config/pi_selected.env >/dev/null 2>&1 \
     || die "config/pi_selected.* is not committed at origin/$CODE_REF: the project owner has not pushed π yet"
   for f in pi_selected.json pi_selected.env; do
     [ -e "$OUT/pi_selected_part2/$f" ] && ! diff -u --strip-trailing-cr "$OUT/pi_selected_part2/$f" "config/$f" \
       && echo "NOTE: committed config/$f differs from the part2 output above"
   done
-  pip install -q -e ".[seg,model,eval,baselines,dev]"   # in case the dependencies changed
 }
 
 part3() {

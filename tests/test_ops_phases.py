@@ -34,8 +34,16 @@ def test_part3_takes_the_committed_pi_and_fresh_data():
     part3, update = _body(OPS, "part3"), _body(OPS, "update_code")
     assert part3.index("update_code") < part3.index("pull_data") < part3.index("check_data")
     assert "full_h100.sh phase3" in part3
-    assert "--ff-only" in update
+    assert "pull_code" in update and "--ff-only" in _body(OPS, "pull_code")
     assert "git ls-files --error-unmatch config/pi_selected.json config/pi_selected.env" in update
+
+
+def test_part2_takes_the_latest_code_before_the_dev_decisions():
+    # a dev rule fixed after part1 cloned the code (e.g. select_pi's fallback) must reach part2
+    part2 = _body(OPS, "part2")
+    assert 'rm -f "$OUT/.done_update_code_part2"' in part2
+    assert part2.index("run update_code_part2 pull_code") < part2.index("check_data") \
+        < part2.index("full_h100.sh phase2")
 
 
 def test_gate_reports_are_collected_on_failure():

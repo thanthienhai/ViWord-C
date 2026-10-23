@@ -330,9 +330,11 @@ tham chiếu mô tả, không dùng để chọn π.
   mask theo vị trí, mặt chữ lặp với POS khác nhau có thể bị ép ở cả hai lần xuất hiện; đây là sai khác đã biết.
 - **Chọn π trên dev:** `bash scripts/run_pipeline.sh select_pi` quét `T1`, `T1+T2`, `T1+T2+T3` ×
   `soft|hard` × δ (`0.1, 0.2, 0.3, 0.5`; `hard` dùng δ=0), so ROUGE-L VietNews với `viword_s*` (π=`none`)
-  và NFR ViNLI với `none` không nén. Chỉ cấu hình mất không quá 0.5 điểm ROUGE-L được xét; cấu hình có NFR thấp
-  nhất được ghi vào `config/pi_selected.json` và `config/pi_selected.env`, cùng bảng tại `results/pi_selection.md`.
-  `stage_eval` dừng nếu các file chọn này chưa tồn tại.
+  và NFR ViNLI với `none` không nén. Chỉ cấu hình mất không quá 0.5 điểm ROUGE-L ở mọi tỉ lệ được xét; cấu hình
+  có NFR thấp nhất được ghi vào `config/pi_selected.json` và `config/pi_selected.env`, cùng bảng tại
+  `results/pi_selection.md`. Nếu không cấu hình nào đạt, chọn cấu hình có mức mất ở tỉ lệ tệ nhất nhỏ nhất và ghi
+  `meets_margin: false` / `PI_MEETS_MARGIN=0` (DATN §2.3, quy tắc 23/10/2026). `stage_eval` dừng nếu các file chọn
+  này chưa tồn tại. Part2 của đội vận hành cập nhật code lên `main` mới nhất trước khi chạy (`update_code_part2`).
 
 ## Results
 
