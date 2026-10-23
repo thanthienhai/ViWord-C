@@ -3,8 +3,14 @@
 stage_eval refuses an uncommitted π (require_committed_pi), so select_pi and eval cannot run in
 one go on the GPU machine: the project owner commits config/pi_selected.* in between.
 """
+import os
 import re
+import shutil
+import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 SCRIPTS = Path(__file__).parents[1] / "scripts"
 FULL = (SCRIPTS / "full_h100.sh").read_text(encoding="utf-8")
@@ -36,6 +42,46 @@ def test_part3_takes_the_committed_pi_and_fresh_data():
     assert "full_h100.sh phase3" in part3
     assert "pull_code" in update and "--ff-only" in _body(OPS, "pull_code")
     assert "git ls-files --error-unmatch config/pi_selected.json config/pi_selected.env" in update
+
+
+def test_a_ckpt_check_fail_ends_phase1_but_a_missing_report_stops_it():
+    phase1 = _body(FULL, "phase1")
+    assert "run_gate ckpt_check results/ckpt_check/report.json ckpt_check" in phase1
+    assert phase1.index("run_gate ckpt_check") < phase1.index("Phase 1 done")
+    gate = _body(FULL, "run_gate")
+    assert 'elif [ -s "$report" ]' in gate and "FAILED_STEPS" in gate and "exit 1" in gate
+    # part2 also accepts a part1 that ran older code and stopped at a ckpt_check FAIL with its report
+    ended = _body(OPS, "phase1_ended_at_ckpt_check_gate")
+    assert '"train done"' in ended and '"ckpt_check FAILED"' in ended and "results/ckpt_check/report.json" in ended
+    assert "phase1_ended_at_ckpt_check_gate" in _body(OPS, "part2")
+
+
+@pytest.mark.skipif(sys.platform == "win32" or not shutil.which("bash"), reason="needs a POSIX bash")
+def test_run_gate_tells_a_gate_fail_from_a_broken_stage(tmp_path):
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "results/full").mkdir(parents=True)
+    # the fake stage exits with $STAGE_EXIT and writes the report when $WRITE_REPORT=1
+    (tmp_path / "scripts/run_pipeline.sh").write_text(
+        'mkdir -p results/ckpt_check; [ "$WRITE_REPORT" = 1 ] && echo "{}" > results/ckpt_check/report.json\n'
+        'exit "$STAGE_EXIT"\n', encoding="utf-8")
+    script = ('OUT=results/full\nlog() { echo "$*" >> "$OUT/full.log"; }\n' + "run_gate() {\n"
+              + _body(FULL, "run_gate") + "}\nrun_gate ckpt_check results/ckpt_check/report.json ckpt_check\n"
+              "echo reached\n")
+    (tmp_path / "run.sh").write_text(script, encoding="utf-8")
+
+    def run(stage_exit, write_report):
+        for f in ("results/ckpt_check/report.json", "results/full/FAILED_STEPS"):
+            (tmp_path / f).unlink(missing_ok=True)
+        env = {**os.environ, "STAGE_EXIT": str(stage_exit), "WRITE_REPORT": str(write_report)}
+        return subprocess.run(["bash", "run.sh"], cwd=tmp_path, env=env, capture_output=True, text=True)
+
+    ok = run(0, 1)
+    assert ok.returncode == 0 and "reached" in ok.stdout
+    gate_fail = run(1, 1)
+    assert gate_fail.returncode == 0 and "reached" in gate_fail.stdout
+    assert "ckpt_check (gate FAIL)" in (tmp_path / "results/full/FAILED_STEPS").read_text()
+    broken = run(1, 0)
+    assert broken.returncode == 1 and "reached" not in broken.stdout
 
 
 def test_part2_takes_the_latest_code_before_the_dev_decisions():

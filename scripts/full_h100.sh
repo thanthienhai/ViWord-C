@@ -77,6 +77,25 @@ run_stages() {  # run_pipeline.sh stages, full log in $OUT/<name>.log; stop on t
   log "$name done"
 }
 
+run_gate() {  # like run_stages for a gate whose FAIL is a research outcome: $1 = name, $2 = its JSON report
+  # The stage deletes its old report first, so a report means the gate decided; a FAIL then blocks only the
+  # test evaluation (stage_eval checks the report) and the phase goes on. No report means the stage broke: stop.
+  local name=$1 report=$2; shift 2
+  log "$name: run_pipeline.sh $*"
+  if bash scripts/run_pipeline.sh "$@" > "$OUT/$name.log" 2>&1; then
+    log "$name done"
+  elif [ -s "$report" ]; then
+    log "$name FAIL (gate result, report in $OUT; the test evaluation stays blocked, the phase goes on)"
+    echo "$name (gate FAIL)" >> "$OUT/FAILED_STEPS"
+  else
+    log "$name FAILED, see $OUT/$name.log"
+    tail -n 30 "$OUT/$name.log"
+    if declare -F "collect_$name" >/dev/null; then "collect_$name"; fi
+    exit 1
+  fi
+  if declare -F "collect_$name" >/dev/null; then "collect_$name"; fi
+}
+
 require_runs() {
   local s name
   for s in 0 1 2; do
@@ -90,7 +109,8 @@ phase1() {
   run_stages gate_eval gate_eval
   run_stages distill distill
   run_stages train train
-  run_stages ckpt_check ckpt_check  # FAIL here is a research outcome: the report is in $OUT
+  # a FAIL here is a research outcome: it blocks eval (phase 3), not the dev decisions of phase 2
+  run_gate ckpt_check results/ckpt_check/report.json ckpt_check
   log "Phase 1 done. Send back $OUT and wait for the go-ahead before phase 2"
 }
 

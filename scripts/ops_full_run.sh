@@ -174,10 +174,17 @@ part1() {
   pack part1
 }
 
+phase1_ended_at_ckpt_check_gate() {  # a part1 on code before 2026-10-23 stopped at a ckpt_check FAIL;
+  # with its report written that is a gate result (the dev decisions of part2 may follow), not a broken run
+  grep -q "train done" "$OUT/full.log" && grep -q "ckpt_check FAILED" "$OUT/full.log" \
+    && [ -s results/ckpt_check/report.json ]
+}
+
 part2() {
   [ -d "$WORKDIR/$OUT" ] || die "$WORKDIR/$OUT not found: run part1 first, in the same WORKDIR"
   cd "$WORKDIR"
-  grep -q "Phase 1 done" "$OUT/full.log" || die "phase 1 did not finish: rerun part1"
+  grep -q "Phase 1 done" "$OUT/full.log" || phase1_ended_at_ckpt_check_gate \
+    || die "phase 1 did not finish: rerun part1"
   exec > >(tee -a "$OUT/ops_part2.log") 2>&1
   log "part2: code $(git rev-parse --short HEAD), GPU $GPU"
   # shellcheck disable=SC1091

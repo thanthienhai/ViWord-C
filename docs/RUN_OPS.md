@@ -31,8 +31,9 @@ Lý do phải dừng giữa các phần:
 - **Không cho reader đọc tập test trước phần 3**, kể cả khi chạy thử. Smoke và precheck dùng tập dev; Belebele
   không có dev nên dùng `data/tasks/belebele_dev.jsonl` (`check_data` tự sinh). `evaluate.py` từ chối các dòng test
   chưa lộ (`refusing to let a reader score ... test row(s)`); không tìm cách vượt qua, chỉ `phase3` được đọc chúng.
-- Hai cổng `ckpt_check` (phần 1) và `mde` (phần 2) có thể dừng với kết quả `FAIL`. Đó là kết quả nghiên cứu, không phải
-  lỗi máy (mục 5).
+- Hai cổng `ckpt_check` (phần 1) và `mde` (phần 2) có thể ra `FAIL`. Đó là kết quả nghiên cứu, không phải lỗi máy
+  (mục 5). Từ 23/10, `ckpt_check` FAIL không dừng phần 1 nữa: phần 1 vẫn xong (`Phase 1 done`) và ghi
+  `ckpt_check (gate FAIL)` vào `FAILED_STEPS`; chỉ bước đánh giá test ở phần 3 bị chặn.
 
 > **Không dùng lại thư mục của các lần chạy trước** (smoke 04/10 hay lần full nào trước ngày 13/10). Dữ liệu tách từ
 > đã được làm lại bằng VnCoreNLP, nên mọi kết quả và checkpoint cũ không còn dùng được. Script chạy trong một thư mục
@@ -206,13 +207,15 @@ rồi dừng. Gửi file này cho chủ đề tài. **Không sửa code tại ch
 được bỏ qua (dòng `done in an earlier run, skipped`). Riêng các giai đoạn trong `full.log` chạy lại từ đầu pha;
 `eval` dùng lại các bản nén đã xong. Phần 3 luôn lấy lại code và dữ liệu mới nhất trước khi chạy.
 
-**Cổng không đạt không phải lỗi máy.** Hai bước dưới đây dừng có chủ đích khi kết quả nghiên cứu không đạt. Báo cáo
-vẫn nằm trong file `-FAILED.tgz`. Gửi file đó, **không chạy lại**, chờ chủ đề tài quyết định.
+**Cổng không đạt không phải lỗi máy.** Hai bước dưới đây ra `FAIL` có chủ đích khi kết quả nghiên cứu không đạt.
+Gửi gói kết quả như bình thường, **không chạy lại**, chờ chủ đề tài quyết định.
 
-| Bước | Dòng cuối log | Ý nghĩa |
+| Bước | Dấu hiệu | Ý nghĩa |
 |---|---|---|
-| `ckpt_check` (phần 1) | `## FAIL` trong bảng | checkpoint ViWord-C không thắng truncation hoặc đối chứng tra từ trên đa số tập dev |
-| `mde` (phần 2) | `mde: FAIL; increase the DEV pilot ...` | lực thống kê không đủ cho lề 0,5 ROUGE-L đã đăng ký |
+| `ckpt_check` (phần 1) | `## FAIL` trong bảng; `full.log` có `ckpt_check FAIL (gate result ...)`, phần 1 vẫn `Phase 1 done` | checkpoint ViWord-C không thắng truncation hoặc đối chứng tra từ trên đa số tập dev; phần 2 vẫn chạy được khi chủ đề tài đồng ý, phần 3 bị chặn |
+| `mde` (phần 2) | `mde: FAIL; increase the DEV pilot ...`, gói `-FAILED.tgz` | lực thống kê không đủ cho lề 0,5 ROUGE-L đã đăng ký |
+
+Nếu `ckpt_check` dừng mà **không** có báo cáo (`results/ckpt_check/report.json`), đó là lỗi máy: xem log và chạy lại phần 1.
 
 Các lỗi khác:
 
