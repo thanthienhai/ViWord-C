@@ -44,15 +44,15 @@ Lý do phải dừng giữa các phần:
 Đội vận hành không làm các việc dưới đây, chỉ cần chờ chủ đề tài báo đã xong. Nếu chạy khi chưa xong, script sẽ dừng
 với thông báo ở mục 5.
 
-| Trước phần | Chủ đề tài đã làm | Nếu chưa làm | Trạng thái 20/10 |
+| Trước phần | Chủ đề tài đã làm | Nếu chưa làm | Trạng thái 23/10 |
 |---|---|---|---|
-| 1 | đẩy code lên GitHub `main`, đẩy dữ liệu mới lên Hugging Face (khớp `data/SHA256SUMS`) | `check_data` dừng | **xong** (dữ liệu HF `029106eb`, 57/57 file khớp) |
+| 1 | đẩy code lên GitHub `main`, đẩy dữ liệu mới lên Hugging Face (khớp `data/SHA256SUMS`) | `check_data` dừng | **xong** (dữ liệu HF `6afe37e5`, 57/57 file khớp) |
 | 1 | gán nhãn và commit hai phiếu mù `data/annot/protect_sheet.jsonl`, `probe_sheet.jsonl` | phần 1: `diagnose` lỗi (không chặn); phần 2: dừng | **xong** (`protect_eval` hợp lệ, G6 đạt) |
 | 1 | tạo repo private `thanthienhai/viword-c-results` và token chỉ ghi repo đó (`HF_RESULTS_TOKEN`) | gói kết quả phải gửi tay (mục 4c) | **xong** (repo tạo 21/10; token của đội vận hành cần quyền ghi repo này) |
 | 3 | commit `config/pi_selected.{json,env}` (lấy từ file `.tgz` của phần 2) | `update_code` dừng | chờ phần 2 |
-| 3 | sinh cận trên của thầy trên test (`results/teacher_test`), đẩy lên Hugging Face, cập nhật `data/SHA256SUMS` | `check_data_part3` hoặc `eval` dừng | **cần sinh lại** (22/10): 300 dòng đầu *chưa lộ* của mỗi tập (DATN §4.3) |
+| 3 | sinh cận trên của thầy trên test (`results/teacher_test`), đẩy lên Hugging Face, cập nhật `data/SHA256SUMS` | `check_data_part3` hoặc `eval` dừng | **xong** (23/10, dữ liệu HF `6afe37e5`): 300 dòng đầu *chưa lộ* của mỗi tập (DATN §4.3) |
 
-Đến 20/10, phần 1 và phần 2 không còn bị chặn; phần 3 chỉ còn chờ chủ đề tài commit π sau phần 2. Các bước trên đã
+Đến 23/10, phần 1 và phần 2 không còn bị chặn; phần 3 chỉ còn chờ chủ đề tài commit π sau phần 2. Các bước trên đã
 chạy thử trên 2× T4 (tải và kiểm tra dữ liệu HF, `protect_eval`, cận trên của thầy trên cả 7 tập test).
 
 ## 1. Yêu cầu
@@ -290,10 +290,10 @@ git add config/pi_selected.json config/pi_selected.env && git commit -m "Select 
 #    môi trường MDE_MARGIN: eval và analyze từ chối), rồi báo đội vận hành chạy lại phần 2 (cả pha chạy lại từ đầu)
 ```
 
-Cận trên của thầy trên test (300 dòng đầu chưa lộ của mỗi tập, DATN §4.3) **phải xong trước phần 3**. Đến 23/10,
-sáu tập đã đủ ở máy chủ đề tài; OneRuler còn thiếu 60 lượt vì endpoint iCOMM không gọi được, và chưa có gì được đẩy
-lên Hugging Face. Bản 19/10 trên HF lấy 300 dòng đầu (trùng phần đã lộ), nên phần 3 sẽ lỗi ở `teacher_upper` nếu
-chưa thay. Khi gọi được thầy:
+Cận trên của thầy trên test (300 dòng đầu chưa lộ của mỗi tập, DATN §4.3) **phải xong trước phần 3**. Đã xong
+23/10: cả 7 tập đủ 300 dòng × 3 tỉ lệ, đẩy lên HF ở revision `6afe37e5` (bản 19/10 lấy 300 dòng đầu, trùng phần đã
+lộ). Các dòng của bản cũ vẫn nằm trong file; `eval` chỉ đọc 300 dòng chưa lộ. Nếu cần sinh lại (đổi thầy, đổi
+`TEACHER_TEST_LIMIT`):
 
 ```bash
 TEACHER_URL=http://172.16.9.11:30049/v1 TEACHER_MODEL=icmodel/icom-model-llm-ic-v3.8-27b \
