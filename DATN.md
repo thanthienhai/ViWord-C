@@ -172,7 +172,9 @@ Không dùng `mean_{s∈w} σ(ℓ_s)`. Quy ước này áp dụng cho mọi ô 2
     `config/pi_selected.json`). Smoke 21/10 (1 epoch, 30 mẫu) đã gặp trường hợp này.
   - *Lề non-inferiority:* lề 0.5 ROUGE-L được cố định trước khi chạy test. Lề phải lớn hơn độ lệch chuẩn giữa 3
     seed trên dev và lớn hơn MDE **quy về cỡ tập test** (§4.3); nếu không, nới lề và ghi rõ lý do trước khi chạy
-    test.
+    test. Lề nằm ở `NI_MARGIN_REGISTERED` trong `scripts/run_pipeline.sh`; nới lề là sửa giá trị đó và commit kèm
+    lý do. Cổng MDE, `stage_eval` và phép non-inferiority ở `stage_analyze` cùng dùng giá trị này và từ chối một lề
+    đặt qua biến môi trường (sửa 23/10/2026: trước đó phân tích luôn dùng 0.5).
   - *Dự đoán phụ:* lợi ích tập trung ở các cặp có premise chứa từ phủ định. Báo cáo tách theo tầng (§3.4).
 - **H3 (nhận thức tokenizer; chỉ trong bản 8 trang).** Chọn theo s(w)/c_T(w)^α* cho điểm cao hơn chọn với
   α = 0, ở cùng ngân sách token đích.

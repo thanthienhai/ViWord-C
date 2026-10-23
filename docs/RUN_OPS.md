@@ -136,6 +136,7 @@ bash ops_full_run.sh part2
 | Bước (trong `full.log`) | Việc | Thời gian ước tính |
 |---|---|---|
 | `update_code_part2` | cập nhật code trong `WORKDIR` lên `main` mới nhất (chỉ fast-forward) và ghi các file đã đổi | 1–3 phút |
+| `pull_data_part2` | tải lại dữ liệu từ Hugging Face (`data/SHA256SUMS` có thể đã đổi cùng code) | 2–5 phút |
 | `check_data_part2` | kiểm tra lại dữ liệu | 1 phút |
 | `diagnose` | đánh giá P và probe trên phiếu mù; chẩn đoán G1/G2/G5, thêm 3 checkpoint LLMLingua-2-vi | 45–60 phút |
 | `select_pi` | chọn π trên dev: 49 cấu hình × 3 tỉ lệ × ~1.200 mẫu dev. Không cấu hình nào đạt lề ROUGE-L thì vẫn chọn một cấu hình và chạy tiếp (`PI_MEETS_MARGIN=0`), không phải lỗi | 1–2,5 giờ |
@@ -284,12 +285,22 @@ sao cho `sha256sum -c data/SHA256SUMS` đúng trên bản Hugging Face. Gán nh�
 # 1. π: lấy hai file từ viword_part2_*.tgz, xem pi_selection.md, rồi commit đúng nguyên văn
 mkdir -p config && cp <giải nén>/results/full/pi_selected.{json,env} config/
 git add config/pi_selected.json config/pi_selected.env && git commit -m "Select π on dev" && git push
-# 2. cận trên của thầy trên test: 300 dòng đầu chưa lộ của mỗi tập (DATN §4.3, sửa đổi 22/10). Bản 19/10 lấy
-#    300 dòng đầu, trùng phần đã lộ; chạy lại (resume: chỉ gọi thầy cho các dòng còn thiếu), rồi đẩy lên HF
-bash scripts/run_pipeline.sh teacher_test        # cần TEACHER_URL (.env)
+# 2. lề non-inferiority: nếu mde_report.md cho SD seed hoặc MDE test ≥ 0,5, nới lề TRƯỚC phần 3 bằng cách sửa
+#    NI_MARGIN_REGISTERED trong scripts/run_pipeline.sh, ghi lý do vào DATN §2.3, commit và push (không dùng biến
+#    môi trường MDE_MARGIN: eval và analyze từ chối), rồi báo đội vận hành chạy lại phần 2 (cả pha chạy lại từ đầu)
+```
+
+Cận trên của thầy trên test (300 dòng đầu chưa lộ của mỗi tập, DATN §4.3) **phải xong trước phần 3**. Đến 23/10,
+sáu tập đã đủ ở máy chủ đề tài; OneRuler còn thiếu 60 lượt vì endpoint iCOMM không gọi được, và chưa có gì được đẩy
+lên Hugging Face. Bản 19/10 trên HF lấy 300 dòng đầu (trùng phần đã lộ), nên phần 3 sẽ lỗi ở `teacher_upper` nếu
+chưa thay. Khi gọi được thầy:
+
+```bash
+TEACHER_URL=http://172.16.9.11:30049/v1 TEACHER_MODEL=icmodel/icom-model-llm-ic-v3.8-27b \
+  bash scripts/run_pipeline.sh teacher_test      # resume: chỉ gọi thầy cho dòng còn thiếu
 sha256sum results/teacher_test/*.jsonl            # thay 7 dòng results/teacher_test/* trong data/SHA256SUMS
-python scripts/hf_data.py push --repo thanthienhai/viword-c-data
-git add data/SHA256SUMS && git commit -m "Data: teacher upper bound on unseen test rows" && git push
+python scripts/hf_data.py push --repo thanthienhai/viword-c-data   # TRƯỚC khi push git, để code và dữ liệu luôn khớp
+git add data/SHA256SUMS && git commit -m "Data: teacher upper bound" && git push
 ```
 
 `config/test_exclusions.json` (các dòng test reader đã chấm trong lúc phát triển) đã commit từ 22/10, trước

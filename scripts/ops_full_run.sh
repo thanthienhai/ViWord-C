@@ -189,10 +189,12 @@ part2() {
   log "part2: code $(git rev-parse --short HEAD), GPU $GPU"
   # shellcheck disable=SC1091
   source .venv/bin/activate
-  # the dev decisions run on the latest code: a rule fixed after part1 started must reach them
-  rm -f "$OUT/.done_update_code_part2"
+  # the dev decisions run on the latest code: a rule fixed after part1 started must reach them; the data
+  # follows the code, since data/SHA256SUMS may have moved with it
+  rm -f "$OUT/.done_update_code_part2" "$OUT/.done_pull_data_part2" "$OUT/.done_check_data_part2"
   run update_code_part2 pull_code
   log "part2: code now $(git rev-parse --short HEAD)"
+  run pull_data_part2 pull_data
   run check_data_part2 check_data
   bash scripts/full_h100.sh phase2 || { pack "$PART-FAILED"; die "phase 2 failed, see $OUT/full.log"; }
   pack part2

@@ -97,7 +97,8 @@ không chặn trên cùng các mẫu: LLMLingua-2 bản công bố (`llmlingua2`
 `mde` chạy trước `eval` trên các split dev, dùng cùng ba seed và bootstrap phân tầng seed → cụm. Nó ghi
 `results/mde_dev/report.{md,json}`: MDE và độ lệch chuẩn seed cho H1, NFR H2 trên ViNLI, cùng ROUGE-L H2 trên
 VietNews. Lề non-inferiority 0,5 điểm ROUGE-L phải lớn hơn cả MDE và SD giữa seed; `stage_eval` gọi `--verify` và
-dừng nếu report không PASS. Belebele không có split dev trong nguồn chuẩn hoá; `belebele_dev` chỉ dùng cho smoke và
+dừng nếu report không PASS. Lề nằm ở `NI_MARGIN_REGISTERED` trong `scripts/run_pipeline.sh` và là lề duy nhất cho
+cổng MDE, `stage_eval` và phép non-inferiority của `stage_analyze`; muốn nới lề thì sửa giá trị đó và commit. Belebele không có split dev trong nguồn chuẩn hoá; `belebele_dev` chỉ dùng cho smoke và
 precheck, nên report ghi rõ H1 dev coverage chỉ gồm ViMMRC và không thay bằng mẫu test.
 
 **Dòng test đã lộ (DATN §4.3, sửa đổi 22/10/2026).** Reader đã chấm các dòng đầu của vài tập test trong lúc phát

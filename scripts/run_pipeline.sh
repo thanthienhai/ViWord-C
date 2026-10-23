@@ -58,7 +58,11 @@ ALPHA_SELECTED_JSON=${ALPHA_SELECTED_JSON:-config/alpha_selected.json}
 ALPHA_GRID=${ALPHA_GRID:-"0.25 0.5 0.75 1"}
 MDE_LIMIT=${MDE_LIMIT:-500}
 MDE_BOOT=${MDE_BOOT:-2000}
-MDE_MARGIN=${MDE_MARGIN:-0.5}
+# DATN §2.3: the registered ROUGE-L non-inferiority margin (points), used by the MDE gate and by the H2 test.
+# To widen it (allowed before the test run when it is below the seed SD or the test MDE), change it here and
+# commit the reason; an environment override only serves dev exploration and is refused by eval and analyze.
+NI_MARGIN_REGISTERED=0.5
+MDE_MARGIN=${MDE_MARGIN:-$NI_MARGIN_REGISTERED}
 MDE_JSON=${MDE_JSON:-results/mde_dev/report.json}
 MDE_REPORT=${MDE_REPORT:-results/mde_dev/report.md}
 CKPT_CHECK_LIMIT=${CKPT_CHECK_LIMIT:-200}
@@ -135,6 +139,14 @@ require_committed_pi() {
   }
   git diff --cached --quiet -- "$PI_SELECTED_JSON" "$PI_SELECTED_ENV" || {
     echo "π config is staged but not committed; commit it before eval" >&2
+    exit 1
+  }
+}
+
+require_registered_margin() {  # the margin of the test run is the committed one, never an environment value
+  [ "$MDE_MARGIN" = "$NI_MARGIN_REGISTERED" ] || {
+    echo "MDE_MARGIN=$MDE_MARGIN differs from the registered margin $NI_MARGIN_REGISTERED in run_pipeline.sh;" \
+         "change NI_MARGIN_REGISTERED there and commit it before the test run" >&2
     exit 1
   }
 }
@@ -527,6 +539,7 @@ stage_eval() {
     exit 1
   }
   require_committed_exclusions
+  require_registered_margin
   python scripts/mde.py --verify "$MDE_JSON" --margin-points "$MDE_MARGIN" --reader "$PRIMARY_READER" \
     --exclude "$TEST_EXCLUSIONS"
   require_segmented
@@ -619,7 +632,7 @@ analyze_hypotheses() {  # the H1 and H2 runs; arguments are passed on to analyze
     --seed-mode aggregate --seeds $SEEDS \
     --primary-reader "$PRIMARY_READER" --hypothesis H1 \
     --holm-family "H1:tasks=vimmrc+belebele,ratios=0.5+0.333+0.2,reader=primary,test=metric" \
-    --factorial llmlingua2vi llmlingua2vi_wordpool viword_syl viword "$@"
+    --factorial llmlingua2vi llmlingua2vi_wordpool viword_syl viword --margin "$MDE_MARGIN" "$@"
   echo
   echo "## H2 — linguistic protection π"
   # aggregate_seed_rows strips _s0/_s1/_s2, so these base names select the
@@ -628,11 +641,12 @@ analyze_hypotheses() {  # the H1 and H2 runs; arguments are passed on to analyze
     --reference viword llmlingua2vi_force llmlingua2vi_forcectx \
     --seed-mode aggregate --seeds $SEEDS \
     --primary-reader "$PRIMARY_READER" --hypothesis H2 \
-    --holm-family "H2:tasks=vinli,ratios=0.5+0.333+0.2,reader=primary,test=nfr" "$@"
+    --holm-family "H2:tasks=vinli,ratios=0.5+0.333+0.2,reader=primary,test=nfr" --margin "$MDE_MARGIN" "$@"
 }
 
 stage_analyze() {  # DATN §4.3: primary analysis without the rows readers scored before the test run
   require_committed_exclusions
+  require_registered_margin
   log "analyze all seeds with seed-stratified bootstrap"
   {
     echo "# Primary analysis: test rows no reader scored before the test run ($TEST_EXCLUSIONS)"

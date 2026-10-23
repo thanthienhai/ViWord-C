@@ -87,9 +87,18 @@ def test_run_gate_tells_a_gate_fail_from_a_broken_stage(tmp_path):
 def test_part2_takes_the_latest_code_before_the_dev_decisions():
     # a dev rule fixed after part1 cloned the code (e.g. select_pi's fallback) must reach part2
     part2 = _body(OPS, "part2")
-    assert 'rm -f "$OUT/.done_update_code_part2"' in part2
-    assert part2.index("run update_code_part2 pull_code") < part2.index("check_data") \
-        < part2.index("full_h100.sh phase2")
+    assert '"$OUT/.done_update_code_part2" "$OUT/.done_pull_data_part2" "$OUT/.done_check_data_part2"' in part2
+    # data/SHA256SUMS moves with the code, so the data is pulled again before it is checked
+    assert part2.index("run update_code_part2 pull_code") < part2.index("run pull_data_part2 pull_data") \
+        < part2.index("run check_data_part2 check_data") < part2.index("full_h100.sh phase2")
+
+
+def test_the_test_run_uses_the_committed_ni_margin():
+    pipeline = (SCRIPTS / "run_pipeline.sh").read_text(encoding="utf-8")
+    assert "MDE_MARGIN=${MDE_MARGIN:-$NI_MARGIN_REGISTERED}" in pipeline
+    assert _body(pipeline, "analyze_hypotheses").count('--margin "$MDE_MARGIN"') == 2  # H1 and H2 runs
+    for stage in ("stage_eval", "stage_analyze"):
+        assert "require_registered_margin" in _body(pipeline, stage)
 
 
 def test_gate_reports_are_collected_on_failure():
