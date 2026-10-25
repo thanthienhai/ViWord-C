@@ -95,16 +95,19 @@ def probe_sheet(segmented_dir: str, tasks_dir: str, n_per_group: int, seed: int,
             for c in chosen]
 
 
-def segmentation_sheet(tasks_dir: str, n: int, seed: int, source: str = "vinli_test") -> list[dict]:
-    """Distinct premises of `source`, syllables only (whitespace tokens of the NFC text)."""
-    from viword.segment import normalize
-
+def segmentation_sheet(segmented_dir: str, tasks_dir: str, n: int, seed: int,
+                       source: str = "vinli_test") -> list[dict]:
+    """Distinct premises of `source`, as the syllables of the current segmentation (punctuation split
+    off, so scripts/gold_cbr.py can align them) without its word boundaries, so the annotator is not
+    anchored on VnCoreNLP."""
+    docs = {r["id"]: r["doc"] for r in read_jsonl(f"{segmented_dir}/{source}.jsonl")}
     by_cluster = {}
     for r in read_jsonl(f"{tasks_dir}/{source}.jsonl"):
         by_cluster.setdefault(r["cluster"], r)
     chosen = random.Random(seed).sample(sorted(by_cluster), min(n, len(by_cluster)))
     return [{"id": by_cluster[c]["id"], "source": source, "sheet": "seg-v1",
-             "syllables": normalize(by_cluster[c]["premise"]).split(), "gold_words": None, "annotator": ""}
+             "syllables": [s for w in flatten(doc_from_json(docs[by_cluster[c]["id"]])) for s in w.syllables],
+             "gold_words": None, "annotator": ""}
             for c in chosen]
 
 
@@ -134,7 +137,8 @@ def main() -> None:
         sheets.append((args.probe_out, probe_sheet(args.segmented_dir, args.tasks_dir, args.per_group, args.seed,
                                                    sheet=args.sheet, exclude=used)))
     if "segmentation" in args.only:
-        sheets.append((args.segmentation_out, segmentation_sheet(args.tasks_dir, args.segmentation_n, args.seed,
+        sheets.append((args.segmentation_out, segmentation_sheet(args.segmented_dir, args.tasks_dir,
+                                                                 args.segmentation_n, args.seed,
                                                                  args.segmentation_source)))
     for path, rows in sheets:
         if Path(path).exists():

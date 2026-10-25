@@ -28,7 +28,34 @@ from pathlib import Path
 
 from viword.data import read_jsonl, write_jsonl
 from viword.protect import is_negation
-from viword.segment import doc_from_json, flatten, render_all
+from viword.segment import doc_from_json, flatten, normalize, render_all
+
+
+def remove_word(premise: str, words: list, index: int) -> str | None:
+    """The raw premise with the `index`-th segmented word deleted, everything else byte for byte as written
+    (rendering the segmented words instead changes the spacing around quotes and punctuation, so the
+    hypothesis would differ from the premise by more than the operator). Matched as the k-th whole-word,
+    case-insensitive occurrence of the word's surface form; None if it cannot be found."""
+    import re
+
+    target = words[index].text.lower()
+    # count earlier occurrences over syllables, not words: "Không quân" holds a "không" the regex also matches
+    sylls = [s.lower() for w in words[:index] for s in w.syllables]
+    n = len(target.split())
+    k = sum(sylls[i:i + n] == target.split() for i in range(len(sylls) - n + 1))
+    pattern = re.compile(r"(?<!\w)" + r"\s+".join(map(re.escape, target.split())) + r"(?!\w)", re.IGNORECASE)
+    matches = list(pattern.finditer(normalize(premise)))
+    if len(matches) <= k:
+        return None
+    text = normalize(premise)
+    start, end = matches[k].span()
+    before, after = text[:start], text[end:]
+    if before.endswith(" ") and (after.startswith(" ") or not after or not after[0].isalnum()):
+        before = before[:-1]
+    elif not before and after.startswith(" "):
+        after = after[1:]
+    out = before + after
+    return out[0].upper() + out[1:] if not before and out and premise[:1].isupper() else out
 
 
 def minimal_pairs(task_rows: list[dict], segmented: dict[str, list], n: int, seed: int = 0) -> list[dict]:
@@ -42,7 +69,9 @@ def minimal_pairs(task_rows: list[dict], segmented: dict[str, list], n: int, see
         negations = [i for i in range(len(words)) if is_negation(words, i)]
         if len(negations) != 1:
             continue
-        positive = render_all([w for i, w in enumerate(words) if i != negations[0]])
+        positive = remove_word(r["premise"], words, negations[0])
+        if positive is None:  # the word could not be located in the raw text: fall back to the rendering
+            positive = render_all([w for i, w in enumerate(words) if i != negations[0]])
         candidates.append((cluster, r["premise"], positive, words[negations[0]].text))
     random.Random(seed).shuffle(candidates)
     rows = []

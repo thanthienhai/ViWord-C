@@ -1,0 +1,19 @@
+{
+  "sheet": "blind-v2",
+  "n_unedited": 100,
+  "n_premises": 200,
+  "sources": [
+    "vinli_dev",
+    "vinli_train"
+  ],
+  "tp": 97,
+  "fp": 3,
+  "fn": 2,
+  "gold_negation": 99,
+  "predicted_probe_targets": 100,
+  "precision": 0.97,
+  "recall": 0.9797979797979798,
+  "f1": 0.9748743718592964,
+  "threshold": 0.95,
+  "passed": true
+}

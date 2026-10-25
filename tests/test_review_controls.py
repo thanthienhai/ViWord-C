@@ -333,3 +333,13 @@ def test_neutral_teacher_prompt_drops_only_the_keep_line():
     assert "phủ định" in TEACHER_PROMPTS["default"] and "phủ định" not in TEACHER_PROMPTS["neutral"]
     assert len(TEACHER_PROMPTS["default"].splitlines()) == len(TEACHER_PROMPTS["neutral"].splitlines()) + 1
     assert "âm tiết" in teacher_prompt("một hai ba", 0.5, "neutral")
+
+
+def test_remove_word_keeps_the_raw_premise_and_skips_compounds():
+    from scripts.make_minimal_pairs import remove_word
+    words = [W("Không quân"), W("Mỹ"), W("không", "R"), W("tiết lộ", "V"), W('"', "CH"), W("mục tiêu"), W('"', "CH"),
+             W(".", "CH")]
+    premise = 'Không quân Mỹ không tiết lộ "mục tiêu".'
+    assert remove_word(premise, words, 2) == 'Không quân Mỹ tiết lộ "mục tiêu".'
+    first = [W("Không", "R"), W("ai"), W("đến", "V"), W(".", "CH")]
+    assert remove_word("Không ai đến.", first, 0) == "Ai đến."
