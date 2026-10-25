@@ -106,6 +106,44 @@ def test_long_sentences_are_cut_and_every_syllable_is_scored():
     assert len(logits) == 480 and np.all(logits == 1.0)  # no syllable left at the neutral 0
 
 
+def test_scorer_runs_the_model_once_per_document():
+    torch = pytest.importorskip("torch")
+    from viword.model import SyllableScorer
+
+    calls = []
+
+    class Model:
+        def __call__(self, input_ids, **kwargs):
+            calls.append(1)
+
+            class Out:
+                logits = torch.arange(input_ids.shape[1], dtype=torch.float).reshape(1, -1, 1)
+            return Out()
+
+    scorer = SyllableScorer.__new__(SyllableScorer)
+    scorer.torch, scorer.device, scorer.tokenizer = torch, "cpu", CountingTokenizer()
+    scorer.model, scorer.max_length, scorer.keep_label = Model(), 512, 1
+    doc = [[W("học sinh"), W("đi")], [W("không"), W("về")]]
+    first = scorer.syllable_logits(doc)
+    first[:] = -99  # callers may modify the result without touching the cache
+    again = scorer.syllable_logits([[W("học sinh"), W("đi")], [W("không"), W("về")]])
+    assert len(calls) == 1 and not np.any(again == -99)
+    scorer.syllable_logits([[W("học sinh"), W("đi"), W("không"), W("về")]])  # other sentence boundaries
+    assert len(calls) == 2
+
+
+def test_causal_lm_dtype_is_fp16_only_on_gpus_without_bf16(monkeypatch):
+    torch = pytest.importorskip("torch")
+    from viword.baselines import lm_dtype
+
+    assert lm_dtype(torch, "cpu") == "auto"
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda *a: (7, 5))  # T4
+    assert lm_dtype(torch, "cuda") == torch.float16
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda *a: (9, 0))  # H100
+    assert lm_dtype(torch, "cuda") == "auto"
+
+
 # ---------------------------------------------------------------------------- D1
 
 DATN_TABLE = {

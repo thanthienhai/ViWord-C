@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from scripts.evaluate_protect import evaluate
+from scripts.evaluate_protect import SHEET, evaluate
 
 
 def _setup(tmp_path, doc, label):
@@ -21,7 +21,7 @@ DOC = [[["không", "R", "O"], ["đi", "V", "O"]], [["Hà Nội", "Np", "B-LOC"],
 def blind(gold, sentence=None, words=None):
     words = words or [[0, "không", "R", "O"], [1, "đi", "V", "O"],
                       [2, "Hà Nội", "Np", "B-LOC"], [3, "đẹp", "A", "O"]]
-    return {"id": "a", "source": "toy", "sentence": sentence, "sheet": "blind-v1",
+    return {"id": "a", "source": "toy", "sentence": sentence, "sheet": SHEET,
             "annotator": "test", "words": words, "gold_tiers": gold}
 
 

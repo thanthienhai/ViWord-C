@@ -11,8 +11,19 @@ word; no alternative pooling variant is selected on dev.
 
 Long documents are split into windows of whole sentences (≤ max_length subwords) that
 overlap by one sentence; logits in the overlap are averaged.
+
+Syllable logits depend only on the checkpoint and the segmented document, not on the
+ratio, π, α, the budget or the reader, so they are computed once: in memory for every
+spec sharing a scorer, and on disk when VIWORD_LOGIT_CACHE (a directory) is set. The
+encoder is loaded only on a cache miss, so every selection variant of a cached
+checkpoint × data set runs on CPU.
 """
 from __future__ import annotations
+
+import hashlib
+import json
+import os
+from pathlib import Path
 
 import numpy as np
 
@@ -60,19 +71,42 @@ def make_windows(doc: Document, tokenizer, max_length: int = 512,
     return windows
 
 
+def model_fingerprint(model_name_or_path: str) -> str:
+    """Identity of a checkpoint for the logit cache: the hub id, or for a local directory its
+    path plus the size and mtime of its config and weight files (a retrained run is a miss)."""
+    path = Path(model_name_or_path)
+    parts = [str(model_name_or_path)]
+    if path.is_dir():
+        for f in sorted(path.iterdir()):
+            if f.suffix in {".json", ".safetensors", ".bin"} and f.name != "train_meta.json":
+                st = f.stat()
+                parts.append(f"{f.name}:{st.st_size}:{int(st.st_mtime)}")
+    return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:16]
+
+
 class SyllableScorer:
     def __init__(self, model_name_or_path: str, device: str | None = None,
-                 max_length: int = 512, keep_label: int = 1):
+                 max_length: int = 512, keep_label: int = 1, cache_dir: str | None = None):
+        self.model_name_or_path = model_name_or_path
+        self.device = device
+        self.max_length = max_length
+        self.keep_label = keep_label
+        cache_dir = cache_dir or os.environ.get("VIWORD_LOGIT_CACHE") or None
+        self.cache_dir = (Path(cache_dir) / f"{model_fingerprint(model_name_or_path)}_{max_length}_{keep_label}"
+                          if cache_dir else None)
+        self.model = None
+
+    def _load(self):
+        if getattr(self, "model", None) is not None:
+            return
         import torch
         from transformers import AutoModelForTokenClassification, AutoTokenizer
 
         self.torch = torch
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-        self.model = AutoModelForTokenClassification.from_pretrained(model_name_or_path)
+        self.device = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name_or_path)
+        self.model = AutoModelForTokenClassification.from_pretrained(self.model_name_or_path)
         self.model.to(self.device).eval()
-        self.max_length = max_length
-        self.keep_label = keep_label
 
     def _keep_logits(self, logits):
         if logits.shape[-1] == 1:
@@ -81,6 +115,28 @@ class SyllableScorer:
         return logits[..., self.keep_label] - logits[..., 1 - self.keep_label]
 
     def syllable_logits(self, doc: Document) -> np.ndarray:
+        # Logits depend only on the syllables and sentence boundaries, not on the ratio or the
+        # selection config, so every spec sharing this scorer (methods.py) reuses them.
+        key = tuple(tuple(syllables_of(sentence)) for sentence in doc)
+        cache = self.__dict__.setdefault("_logit_cache", {})
+        if key not in cache:
+            path = None
+            if getattr(self, "cache_dir", None) is not None:
+                digest = hashlib.sha1(json.dumps(key, ensure_ascii=False).encode("utf-8")).hexdigest()
+                path = self.cache_dir / digest[:2] / f"{digest}.npy"
+            if path is not None and path.exists():
+                cache[key] = np.load(path)
+            else:
+                cache[key] = self._syllable_logits(doc)
+                if path is not None:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    tmp = path.with_suffix(f".{os.getpid()}.tmp.npy")
+                    np.save(tmp, cache[key])
+                    os.replace(tmp, path)
+        return cache[key].copy()
+
+    def _syllable_logits(self, doc: Document) -> np.ndarray:
+        self._load()
         sylls = syllables_of(flatten(doc))
         total, count = np.zeros(len(sylls)), np.zeros(len(sylls))
         for start, end in make_windows(doc, self.tokenizer, self.max_length):

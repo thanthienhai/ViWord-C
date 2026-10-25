@@ -141,7 +141,8 @@ def _stage(text, name):
 def test_only_the_eval_stage_lets_a_reader_read_unseen_test_rows():
     pipeline = (SCRIPTS / "run_pipeline.sh").read_text(encoding="utf-8")
     eval_body = _stage(pipeline, "stage_eval")
-    assert eval_body.count(f"{ALLOW_TEST_ENV}=1 python scripts/evaluate.py") == 2
+    # teacher upper bound, main run, and the EVAL_EXTRAS helper: all after the eval-stage checks
+    assert eval_body.count(f"{ALLOW_TEST_ENV}=1 python scripts/evaluate.py") == 3
     assert eval_body.index("require_committed_exclusions") < eval_body.index(f"{ALLOW_TEST_ENV}=1")
     others = pipeline.replace(eval_body, "")
     for name in ("ops_full_run.sh", "full_h100.sh", "smoke_h100.sh"):

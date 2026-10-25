@@ -6,10 +6,24 @@ A word is protected according to its (text, POS, context), not its string alone.
   T3  quantity and comparison
 The disambiguation rules below are deliberately simple; their precision/recall is
 measured on ~200 hand-annotated sentences (DATN §3.4) rather than assumed.
+
+Detector v2 (default) fixes the two largest error groups of the blind-v1 audit: 141/142
+missed T1 words were proper names the NER left untagged, so a proper-noun POS (Np) or a
+capitalised word that is not sentence-initial (any position for a multi-syllable word
+whose every syllable is capitalised) counts as a name; and 28/37 false positives were
+"một" used as an article, so "một" before a classifier ("một con", "một cái") is not a
+number. v2 must be audited on a new blind sheet (blind-v2), never on blind-v1, which was
+used to find these errors. VIWORD_P_DETECTOR=v1 restores the audited v1 rules.
 """
 from __future__ import annotations
 
+import os
+
 from .segment import Word
+
+DETECTOR_VERSION = os.environ.get("VIWORD_P_DETECTOR", "v2")
+if DETECTOR_VERSION not in {"v1", "v2"}:
+    raise ValueError(f"VIWORD_P_DETECTOR must be v1 or v2, got {DETECTOR_VERSION!r}")
 
 NEGATION = {"không", "chưa", "chẳng", "chả", "đừng", "chớ", "không hề", "chưa từng"}
 # These surface sequences contain ``không`` but do not negate a proposition:
@@ -31,6 +45,39 @@ NUMERAL_TAGS = {"M"}
 
 def _next_text(words: list[Word], i: int) -> str:
     return words[i + 1].text.lower() if i + 1 < len(words) else ""
+
+
+# "một" + classifier is an article ("một con mèo" = "a cat"), not the number one (v2).
+CLASSIFIERS = {"con", "cái", "chiếc", "ngôi", "quyển", "cuốn", "bức", "tấm", "sự", "cuộc", "nỗi",
+               "niềm", "bài", "căn", "tờ", "trái", "quả", "cây", "hạt", "bộ", "đôi", "mảnh", "cơn"}
+CLASSIFIER_TAGS = {"Nc"}
+# a word after one of these starts a sentence or a quotation, so its capital letter says nothing
+SENTENCE_OPENERS = {".", "!", "?", "…", ":", ";", "\"", "“", "'", "‘", "(", "-", "–", "—"}
+
+
+def _is_article_mot(words: list[Word], i: int) -> bool:
+    if words[i].text.lower() != "một" or i + 1 >= len(words):
+        return False
+    nxt = words[i + 1]
+    return nxt.pos in CLASSIFIER_TAGS or nxt.text.lower() in CLASSIFIERS
+
+
+def _capitalised(syllable: str) -> bool:
+    return syllable[:1].isupper()
+
+
+def is_fallback_name(words: list[Word], i: int) -> bool:
+    """Proper name the NER missed (v2): POS Np, or capitalised syllables away from a sentence
+    start. A sentence-initial word counts only if it has several syllables, all capitalised
+    ("Hà Nội"), since a common word there capitalises only its first syllable."""
+    w = words[i]
+    if w.pos == "Np":
+        return True
+    sylls = w.syllables
+    if not any(c.isalpha() for c in w.text) or not all(_capitalised(s) for s in sylls):
+        return False
+    initial = i == 0 or words[i - 1].text in SENTENCE_OPENERS
+    return len(sylls) > 1 or not initial
 
 
 # Ambiguous function words: protect only when the POS/context rule says so.
@@ -84,6 +131,11 @@ def protection_tier(words: list[Word], i: int) -> str | None:
         return None
     if w.ner != "O":
         return "T1"
+    v2 = DETECTOR_VERSION == "v2"
+    if v2 and text not in TIER_OF_WORD and is_fallback_name(words, i):
+        return "T1"
+    if v2 and _is_article_mot(words, i):
+        return None
     # Numbers, including "không" used as zero before a numeral ("không độ"): T1 either way.
     if w.pos in NUMERAL_TAGS or any(c.isdigit() for c in text):
         return "T1"
@@ -97,6 +149,33 @@ def protection_tier(words: list[Word], i: int) -> str | None:
 
 def protection_tiers(words: list[Word]) -> list[str | None]:
     return [protection_tier(words, i) for i in range(len(words))]
+
+
+SCOPE_WINDOW = 4  # the head is looked for among the next few words of the clause
+
+
+def scope_heads(words: list[Word], tiers: list[str | None] | None = None) -> list[tuple[int, int]]:
+    """(operator, head) pairs: for every lexical T1/T2 operator (negation, condition,
+    tense/aspect, modality; not names or numbers), the first verb or adjective (POS V*/A*)
+    among the next SCOPE_WINDOW words, skipping adverbs (R: "hề", "đã") and stopping at
+    punctuation. A modal verb is a head too, so "không được phép vào" gives (không, được phép)
+    and (được phép, vào): keeping "không" while dropping "được phép" breaks the scope.
+    Positional rule on VnCoreNLP POS; a dependency parse would be finer."""
+    tiers = protection_tiers(words) if tiers is None else tiers
+    pairs = []
+    for i, (w, tier) in enumerate(zip(words, tiers)):
+        if tier not in {"T1", "T2"} or w.text.lower() not in TIER_OF_WORD:
+            continue
+        for j in range(i + 1, min(len(words), i + 1 + SCOPE_WINDOW)):
+            nxt = words[j]
+            if nxt.is_punct:
+                break
+            if nxt.pos[:1] == "R":
+                continue
+            if nxt.pos[:1] in {"V", "A"}:
+                pairs.append((i, j))
+                break
+    return pairs
 
 
 def force_tokens_for_context(words: list[Word], tiers: tuple[str, ...] = TIERS) -> list[str]:

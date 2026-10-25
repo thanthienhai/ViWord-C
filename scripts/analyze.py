@@ -14,6 +14,15 @@
      Holm within the registered NFR family; one-sided exact McNemar per seed is printed as a
      descriptive check only, because pooled pairs share premises and seeds;
   5. VietNews: non-inferiority of target vs each reference on ROUGE-L (--margin in points).
+  6. descriptive tables printed before any hypothesis test: CBR of every system next to the CBR
+     of random syllable deletion at the same keep rate (the H1 premise: is the syllable system's
+     CBR above chance at all?); Table 4 bookkeeping (tokens/budget, units removed by the trim
+     step, Σc deviation); retention per protection tier and operator-scope retention. In the
+     NFR section, excess NFR (NFR − NFR of random word deletion at the same budget) and the
+     direction of the flips on negated premises; with --cbr-regression, the gain is also
+     regressed on the harmful (MLM-unrecoverable) cuts and split by high/low CBR.
+
+  --hypothesis none: descriptive comparisons (e.g. the label-unit controls), no Holm family.
 
 Usage:
   python scripts/analyze.py --rows results/eval/*.jsonl --target viword \
@@ -31,7 +40,7 @@ Usage:
   test run (DATN §4.3, amendment of 2026-10-22); without it, every row (the sensitivity analysis).
 """
 import argparse
-from collections import defaultdict
+from collections import Counter, defaultdict
 import re
 
 import numpy as np
@@ -237,6 +246,65 @@ def non_inferiority_result(a, b, metric: str, margin: float, args) -> dict:
     return non_inferiority(values_a, values_b, clusters, margin, args.n_boot)
 
 
+def _share(num: float, den: float) -> float:
+    return num / den if den else float("nan")
+
+
+def print_descriptive_tables(systems: dict) -> None:
+    """CBR vs chance, Table 4 bookkeeping, tier and scope retention (per task × reader × method × ratio)."""
+    keyed = sorted(k for k, g in systems.items() if any("cbr_partial" in r for r in g))
+    if keyed:
+        print("\n## CBR vs random syllable deletion at the same keep rate\n")
+        print("Read before any H1 result: if the syllable systems' CBR is not above chance, word decisions "
+              "have little to repair. Chance = Σ expected partial / Σ expected surviving multi-syllable "
+              "words for independent deletion at each example's keep rate.\n")
+        print("| task | reader | method | ratio | CBR | chance CBR | CBR − chance | words |")
+        print("|---|---|---|---|---|---|---|---|")
+        for key in keyed:
+            group = [r for r in systems[key] if "cbr_partial" in r]
+            partial = sum(r["cbr_partial"] for r in group)
+            words = partial + sum(r["cbr_full"] for r in group)
+            if not any("cbr_chance_partial" in r for r in group):
+                continue
+            chance = _share(sum(r.get("cbr_chance_partial", 0) for r in group),
+                            sum(r.get("cbr_chance_survived", 0) for r in group))
+            value = _share(partial, words)
+            print(f"| {' | '.join(map(str, key))} | {value:.4f} | {chance:.4f} | {value - chance:+.4f} | {words} |")
+
+    keyed = sorted(k for k, g in systems.items() if any("selection" in r for r in g))
+    if keyed:
+        print("\n## Table 4 bookkeeping: budget use and the trim step\n")
+        print("| task | reader | method | ratio | tokens/budget | units trimmed (mean) | rows trimmed | "
+              "real − Σc (mean) |")
+        print("|---|---|---|---|---|---|---|---|")
+        for key in keyed:
+            sel = [r["selection"] for r in systems[key] if "selection" in r]
+            ratio = mean_budget_ratio(systems[key])
+            print(f"| {' | '.join(map(str, key))} | {'-' if ratio is None else f'{ratio:.3f}'} | "
+                  f"{np.mean([s.get('n_trimmed', 0) for s in sel]):.2f} | "
+                  f"{np.mean([s.get('n_trimmed', 0) > 0 for s in sel]):.1%} | "
+                  f"{np.mean([s.get('cost_deviation', 0) for s in sel]):+.2f} |")
+
+    keyed = sorted(k for k, g in systems.items() if any("tier_kept" in r for r in g))
+    if keyed:
+        print("\n## Retention by protection tier and operator scope\n")
+        print("Word kept if any syllable is kept. Scope = kept T1/T2 operators whose head (next verb/adjective) "
+              "is kept too. For the systems without π this is what the encoder learned from the teacher alone.\n")
+        print("| task | reader | method | ratio | all | T1 | T2 | T3 | scope (kept ops) |")
+        print("|---|---|---|---|---|---|---|---|---|")
+        for key in keyed:
+            group = [r for r in systems[key] if "tier_kept" in r]
+            cells = []
+            for tier in ("all", "T1", "T2", "T3"):
+                kept = sum(r["tier_kept"].get(tier, [0, 0])[0] for r in group)
+                total = sum(r["tier_kept"].get(tier, [0, 0])[1] for r in group)
+                cells.append(f"{_share(kept, total):.3f}" if total else "-")
+            ops = sum(r.get("scope_ops_kept", 0) for r in group)
+            heads = sum(r.get("scope_heads_kept", 0) for r in group)
+            cells.append(f"{_share(heads, ops):.3f} ({ops})" if ops else "-")
+            print(f"| {' | '.join(map(str, key))} | {' | '.join(cells)} |")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rows", nargs="+", required=True)
@@ -250,7 +318,11 @@ def main():
                          "repeat per hypothesis")
     ap.add_argument("--hypothesis", default="H1",
                     help="which registered family this run tests (H1, H2, ...); only that family is "
-                         "Holm-adjusted, every other p-value is printed raw")
+                         "Holm-adjusted, every other p-value is printed raw; 'none' = descriptive run")
+    ap.add_argument("--random-reference", default="random",
+                    help="method whose NFR is subtracted for the excess NFR (random word deletion)")
+    ap.add_argument("--no-descriptive", action="store_true",
+                    help="skip the CBR-vs-chance, bookkeeping and retention tables")
     ap.add_argument("--seed-mode", choices=("independent", "aggregate"), default="independent",
                     help="analyze each method independently, or aggregate *_s0/*_s1/*_s2 by seed")
     ap.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2],
@@ -286,7 +358,9 @@ def main():
     references = args.reference if args.target else []
     readers = sorted({r["reader"] for r in rows})
     family_specs = list(args.holm_family or [])
-    if not any(spec.partition(":")[0] == args.hypothesis for spec in family_specs):
+    if args.hypothesis == "none":
+        pass
+    elif not any(spec.partition(":")[0] == args.hypothesis for spec in family_specs):
         if args.hypothesis not in DEFAULT_HOLM_FAMILIES:
             ap.error(f"no --holm-family registered for --hypothesis {args.hypothesis}")
         family_specs.append(DEFAULT_HOLM_FAMILIES[args.hypothesis])
@@ -294,7 +368,8 @@ def main():
         families = {family["name"]: family for family in map(parse_holm_family, family_specs)}
     except ValueError as exc:
         ap.error(str(exc))
-    active_family = families[args.hypothesis]
+    # a descriptive run tests nothing registered: no family is active, no p-value is Holm-adjusted
+    active_family = families.get(args.hypothesis, {"name": "none", "test": "none"})
     primary_reader = args.primary_reader or (readers[0] if len(readers) == 1 else None)
     if references and any(family["reader"] == "primary" for family in families.values()) and primary_reader is None:
         ap.error("--primary-reader is required when rows contain multiple readers")
@@ -322,6 +397,8 @@ def main():
 
     systems = by_key(rows, "task", "reader", "method", "ratio")
     uncompressed = by_key([r for r in rows if r["method"] == "none"], "task", "reader")
+    if not args.no_descriptive:
+        print_descriptive_tables(systems)
     print(f"\nHypothesis under test: {args.hypothesis}. Registered Holm families:")
     for family in families.values():
         resolved = primary_reader if family["reader"] == "primary" else family["reader"]
@@ -343,6 +420,7 @@ def main():
             if not tests:
                 continue
             family = active_family if active_family["test"] == "metric" else None
+            family = family if family and "tasks" in family else None
             adjusted, family_cells = adjust_for_holm_family(tests, family, reader, primary_reader)
             print(f"reader {reader}")
             print("| task | ratio | diff [95% CI] | p | p Holm | tok/budget target/reference |\n"
@@ -400,9 +478,12 @@ def main():
         print("\n## ViNLI flip rate (NFR) vs. uncompressed prediction\n")
         print("Negated premises = pairs whose premise probe_negation changed (needs probe_negation rows). "
               "Gate G2 reads the probe's own row in the last column.\n")
-        print("| reader | method | ratio | NFR | NFR on originally correct | NFR on negated premises (n) |")
-        print("|---|---|---|---|---|---|")
-        flips = {}
+        print(f"Excess NFR = NFR − NFR of `{args.random_reference}` at the same ratio (random word deletion "
+              "under the same budget), so that general information loss at 1/3 and 1/5 is netted out.\n")
+        print("| reader | method | ratio | NFR | excess NFR | NFR on originally correct | "
+              "NFR on negated premises (n) | excess NFR, negated |")
+        print("|---|---|---|---|---|---|---|---|")
+        flips, transitions, cells = {}, {}, []
         for key in sorted(nli):
             task, reader, method, ratio = key
             a, base = paired(systems[key], uncompressed[task, reader])
@@ -410,9 +491,28 @@ def main():
             correct = [f for f, y in zip(flipped, base) if y["accuracy"] == 1.0]
             neg = [f for f, x in zip(flipped, a) if (reader, x["id"]) in negated]
             flips[reader, method, ratio] = {row_key(x): f for x, f in zip(a, flipped)}
-            print(f"| {reader} | {method} | {ratio} | {np.mean(flipped):.4f} | "
+            transitions[reader, method, ratio] = Counter(
+                (y["prediction"] or "∅", x["prediction"] or "∅") for x, y in zip(a, base)
+                if (reader, x["id"]) in negated and x["prediction"] != y["prediction"])
+            cells.append((reader, method, ratio, flipped, correct, neg))
+        for reader, method, ratio, flipped, correct, neg in cells:  # after all flips: random may sort later
+            excess = excess_nfr(flips, reader, method, ratio, args.random_reference)
+            excess_neg = excess_nfr(flips, reader, method, ratio, args.random_reference,
+                                    keep=lambda k, rd=reader: (rd, k[0] if isinstance(k, tuple) else k) in negated)
+            print(f"| {reader} | {method} | {ratio} | {np.mean(flipped):.4f} | {excess} | "
                   f"{np.mean(correct) if correct else float('nan'):.4f} | "
-                  f"{np.mean(neg) if neg else float('nan'):.4f} ({len(neg)}) |")
+                  f"{np.mean(neg) if neg else float('nan'):.4f} ({len(neg)}) | {excess_neg} |")
+        shown = {args.target, *references} if args.target else None
+        print("\n### Flip direction on negated premises (uncompressed → compressed prediction)\n")
+        print("| reader | method | ratio | flips | entailment→contradiction | contradiction→entailment | "
+              "most common |")
+        print("|---|---|---|---|---|---|---|")
+        for (reader, method, ratio), counter in sorted(transitions.items()):
+            if shown is not None and method not in shown:
+                continue
+            common = ", ".join(f"{p}→{q} {n}" for (p, q), n in counter.most_common(3)) or "-"
+            print(f"| {reader} | {method} | {ratio} | {sum(counter.values())} | "
+                  f"{counter['entailment', 'contradiction']} | {counter['contradiction', 'entailment']} | {common} |")
         for reference in references:
             print(f"\n### NFR: {args.target} < {reference} (one-sided paired bootstrap over premises"
                   f"{' and seeds' if args.seed_mode == 'aggregate' else ''})\n")
@@ -440,6 +540,7 @@ def main():
                 if not tests:
                     continue
                 family = active_family if active_family["test"] == "nfr" else None
+                family = family if family and "tasks" in family else None
                 adjusted, _ = adjust_for_holm_family(tests, family, reader, primary_reader)
                 print(f"reader {reader}")
                 print("| ratio | NFR diff [95% CI] | p | p Holm | McNemar per seed, target-only/ref-only "
@@ -467,6 +568,7 @@ def main():
         print("Slope > 0 means the word decision helps more where the syllable system breaks more words. "
               "Cluster bootstrap 95% CI; examples whose compression keeps no multi-syllable word are dropped.\n")
         print("| task | reader | ratio | slope [95% CI] | n | clusters |\n|---|---|---|---|---|---|")
+        mechanism = {}
         for (task, reader, method, ratio), group in sorted(systems.items()):
             ref = systems.get((task, reader, args.cbr_regression, ratio))
             if method != args.target or ref is None:
@@ -480,6 +582,47 @@ def main():
                                         [p[2] for p in pairs], args.n_boot)
             print(f"| {task} | {reader} | {ratio} | {t['slope']:+.4f} [{t['ci_low']:+.4f}, {t['ci_high']:+.4f}] | "
                   f"{t['n']} | {t['n_clusters']} |")
+            mechanism[task, reader, ratio] = (a, b, m)
+        print_mechanism_extras(mechanism, args)
+
+
+def excess_nfr(flips: dict, reader: str, method: str, ratio, random_method: str, keep=None) -> str:
+    """NFR(method) − NFR(random) on the rows both have (optionally restricted by `keep`)."""
+    fa, fb = flips.get((reader, method, ratio)), flips.get((reader, random_method, ratio))
+    if fa is None or fb is None:
+        return "-"
+    keys = [k for k in fa.keys() & fb.keys() if keep is None or keep(k)]
+    if not keys:
+        return "-"
+    return f"{np.mean([fa[k] for k in keys]) - np.mean([fb[k] for k in keys]):+.4f}"
+
+
+def print_mechanism_extras(mechanism: dict, args) -> None:
+    """Harmful cuts as the regressor, and the gain split at the median CBR of the syllable system."""
+    if not mechanism:
+        return
+    print("\nHarmful cuts = broken words the MLM cannot restore (evaluate.py --rr-model); a harmless cut "
+          "cannot carry the mechanism. Rows without the count are dropped.\n")
+    print("| task | reader | ratio | slope on harmful cuts [95% CI] | n | gain, low CBR half | gain, high CBR half |")
+    print("|---|---|---|---|---|---|---|")
+    for (task, reader, ratio), (a, b, m) in sorted(mechanism.items()):
+        harmful = [(y["cbr_harmful"], x[m] - y[m], x["cluster"]) for x, y in zip(a, b) if "cbr_harmful" in y]
+        slope = "-"
+        if len({c for _, _, c in harmful}) >= 2:
+            t = cluster_bootstrap_slope([p[0] for p in harmful], [p[1] for p in harmful],
+                                        [p[2] for p in harmful], args.n_boot)
+            slope = f"{t['slope']:+.4f} [{t['ci_low']:+.4f}, {t['ci_high']:+.4f}]"
+        pairs = [(y["cbr"], x[m] - y[m], x["cluster"]) for x, y in zip(a, b) if y.get("cbr") is not None]
+        halves = ["-", "-"]
+        if len(pairs) >= 4:
+            median = float(np.median([p[0] for p in pairs]))
+            for h, side in enumerate((lambda v: v <= median, lambda v: v > median)):
+                sub = [p for p in pairs if side(p[0])]
+                if len({c for _, _, c in sub}) >= 2:
+                    boot = cluster_bootstrap([p[1] for p in sub], [p[2] for p in sub], min(args.n_boot, 2000))
+                    halves[h] = (f"{np.mean([p[1] for p in sub]):+.4f} [{np.percentile(boot, 2.5):+.4f}, "
+                                 f"{np.percentile(boot, 97.5):+.4f}] (n={len(sub)})")
+        print(f"| {task} | {reader} | {ratio} | {slope} | {len(harmful)} | {halves[0]} | {halves[1]} |")
 
 
 if __name__ == "__main__":

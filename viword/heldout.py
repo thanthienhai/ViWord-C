@@ -84,6 +84,8 @@ def refuse_unseen_test_rows(rows: list[dict], tasks_dir: str | Path = ROOT / "da
     exclusions = load_exclusions(exclusions_path) if Path(exclusions_path).exists() else {}
     unseen = unseen_fingerprints(tasks_dir, exclusions)
     hits = [row["id"] for row in rows if fingerprint(row) in unseen]
+    # rows built from test passages (scripts/make_long_context.py) are test material too
+    hits += [row["id"] for row in rows if row.get("derived_from") in TEST_FILES]
     if hits:
         raise SystemExit(f"refusing to let a reader score {len(hits)} test row(s) kept for the test run "
                          f"(e.g. {hits[0]}): only `run_pipeline.sh eval` reads them ({ALLOW_TEST_ENV}=1). "

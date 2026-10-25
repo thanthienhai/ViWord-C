@@ -4,11 +4,15 @@
 
 `greedy_select` ranks units by s_i / c_i^α (α = 0: score only, as in LLMLingua-2;
 α = 1: classic greedy knapsack), then runs a fill pass. `exact_select` solves the 0/1
-knapsack exactly by dynamic programming and is used as a reference for the greedy one.
+knapsack exactly by dynamic programming (`exact=1` in a method spec); with hard
+protection the protected units are taken first, as in the greedy pass 1, and the DP fills
+the remaining budget.
 """
 from __future__ import annotations
 
 from typing import Callable
+
+import numpy as np
 
 
 class TokenCounter:
@@ -52,21 +56,34 @@ def greedy_select(scores: list[float], costs: list[int], budget: int, alpha: flo
     return keep
 
 
-def exact_select(scores: list[float], costs: list[int], budget: int) -> list[bool]:
-    """Exact 0/1 knapsack by dynamic programming, O(n · budget)."""
+def exact_select(scores: list[float], costs: list[int], budget: int,
+                 priority: list[int] | None = None) -> list[bool]:
+    """Exact 0/1 knapsack by dynamic programming, O(n · budget) (numpy over the budget axis).
+
+    With `priority`, units of the highest priority are taken first by score while they fit
+    (lexicographic: protection before value), and the DP runs on the rest."""
     n = len(scores)
-    best = [0.0] * (budget + 1)
-    took = [bytearray(budget + 1) for _ in range(n)]
-    for i in range(n):
+    keep, budget = [False] * n, max(int(budget), 0)
+    free = list(range(n))
+    if priority and any(priority):
+        for i in sorted((i for i in range(n) if priority[i]), key=lambda i: (-priority[i], -scores[i])):
+            if costs[i] <= budget:
+                keep[i], budget = True, budget - costs[i]
+        free = [i for i in range(n) if not priority[i]]
+    best = np.zeros(budget + 1)
+    took = np.zeros((len(free), budget + 1), dtype=bool)
+    for k, i in enumerate(free):
         c, s = costs[i], scores[i]
-        for b in range(budget, c - 1, -1):
-            if best[b - c] + s > best[b]:
-                best[b] = best[b - c] + s
-                took[i][b] = 1
-    keep, b = [False] * n, budget
-    for i in range(n - 1, -1, -1):
-        if took[i][b]:
-            keep[i], b = True, b - costs[i]
+        if c > budget:
+            continue
+        candidate = best[:budget + 1 - c] + s
+        better = candidate > best[c:]
+        took[k, c:] = better
+        best[c:] = np.where(better, candidate, best[c:])
+    b = budget
+    for k in range(len(free) - 1, -1, -1):
+        if took[k, b]:
+            keep[free[k]], b = True, b - costs[free[k]]
     return keep
 
 

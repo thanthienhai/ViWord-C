@@ -7,7 +7,7 @@ instead would give confidence intervals that are too narrow.
 from __future__ import annotations
 
 import math
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import numpy as np
 
@@ -242,3 +242,14 @@ def flip_rate_test(flips_a, flips_b, clusters: list[str], strata: list | None = 
         "n": len(diff),
         "n_clusters": len(set(clusters)),
     }
+
+
+def cohen_kappa(a: list, b: list) -> float:
+    """Cohen's κ of two raters' categorical labels on the same units."""
+    if len(a) != len(b) or not a:
+        raise ValueError("need two label lists of the same, non-zero length")
+    n = len(a)
+    observed = sum(x == y for x, y in zip(a, b)) / n
+    ca, cb = Counter(a), Counter(b)
+    expected = sum(ca[k] * cb[k] for k in ca.keys() | cb.keys()) / (n * n)
+    return (observed - expected) / (1 - expected) if expected < 1 else 1.0

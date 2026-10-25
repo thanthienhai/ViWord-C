@@ -9,6 +9,10 @@ Spec syntax: `name` or `name:key=value,key=value`. Examples:
   translate:inner=llmlingua2                (Belebele only: compress the English passage)
   scored:model=runs/viword_s0,unit=word,protect=soft,delta=0.2,alpha=0,name=viword
   scored:model=runs/llmlingua2vi_s0,unit=syllable,protect=force,tiers=T1+T2,name=...
+  scored:model=runs/viword_s0,unit=word,alpha=0.5,name=...   (cost-aware ranking s/c^α)
+  scored:model=runs/viword_s0,unit=word,exact=1,name=...     (exact DP knapsack)
+  scored:model=runs/viword_s0,unit=word,protect=soft,scope=0.2,name=...  (operator scope)
+  scored:model=runs/viword_s0,unit=word,qrel=0.3,name=...    (question relevance)
   lexprior:train=data/distill/distilled.jsonl,exclude=runs/viword_s0/dev_ids.jsonl
   precomputed:path=results/teacher_dev/vinli_dev.jsonl,trim=1,name=teacher
 
@@ -109,6 +113,8 @@ def build_compressor(spec: str, cache: dict | None = None):
             alpha=float(a.get("alpha", 0.0)),
             cost=a.get("cost", "tokens"),
             exact=a.get("exact", "0") == "1",
+            scope=float(a.get("scope", 0.0)),
+            qrel=float(a.get("qrel", 0.0)),
         )
         return ScoredCompressor(scorer, config, a.get("name", spec))
     raise ValueError(f"unknown method spec: {spec}")

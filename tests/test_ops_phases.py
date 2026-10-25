@@ -96,7 +96,9 @@ def test_part2_takes_the_latest_code_before_the_dev_decisions():
 def test_the_test_run_uses_the_committed_ni_margin():
     pipeline = (SCRIPTS / "run_pipeline.sh").read_text(encoding="utf-8")
     assert "MDE_MARGIN=${MDE_MARGIN:-$NI_MARGIN_REGISTERED}" in pipeline
-    assert _body(pipeline, "analyze_hypotheses").count('--margin "$MDE_MARGIN"') == 2  # H1 and H2 runs
+    body = _body(pipeline, "analyze_hypotheses")
+    # H1 and H2 runs (and the descriptive controls): every margin passed is the registered one
+    assert body.count('--margin "$MDE_MARGIN"') >= 2 and body.count('--margin "$MDE_MARGIN"') == body.count("--margin ")
     for stage in ("stage_eval", "stage_analyze"):
         assert "require_registered_margin" in _body(pipeline, stage)
 

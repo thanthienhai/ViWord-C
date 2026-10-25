@@ -23,10 +23,12 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from viword.protect import TIERS, protection_tiers
+from viword.protect import DETECTOR_VERSION, TIERS, protection_tiers
 from viword.segment import doc_from_json, flatten
 
-SHEET = "blind-v1"
+# Each detector version is audited on its own blind sheet: v2's rules were written after looking at the
+# blind-v1 errors, so blind-v1 would overstate v2 (make_annotation_sheets.py --sheet blind-v2 --exclude-sheets ...).
+SHEET = f"blind-{DETECTOR_VERSION}"
 
 
 def load_segmented(directory: str, source: str) -> dict[str, list]:
@@ -106,7 +108,7 @@ def evaluate(labels_path: str, segmented_dir: str, min_rows: int = 200) -> dict:
                 c["predicted"] += actual_yes
                 c["gold"] += expected_yes
 
-    report = {"n_sentences": len(labels), "n_without_p": no_p, "sheet": SHEET,
+    report = {"n_sentences": len(labels), "n_without_p": no_p, "sheet": SHEET, "detector": DETECTOR_VERSION,
               "sources": sorted(sources), "tiers": {}}
     for tier in TIERS:
         c = counts[tier]
@@ -123,7 +125,8 @@ def verify(path: str) -> None:
         raise SystemExit(f"missing {path}; annotate the blind sheet and run evaluate_protect.py")
     report = json.loads(Path(path).read_text(encoding="utf-8"))
     if report.get("sheet") != SHEET:
-        raise SystemExit(f"{path} was not computed from a blind annotation sheet")
+        raise SystemExit(f"{path} was not computed from the blind annotation sheet of detector "
+                         f"{DETECTOR_VERSION} ({SHEET}; got {report.get('sheet')})")
     print(f"protect evaluation OK: {path}")
 
 

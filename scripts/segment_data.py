@@ -15,6 +15,7 @@ Identical texts are segmented once (ViNLI has ~8 hypotheses per premise). --work
 runs one segmenter per process (useful for underthesea/pyvi).
 """
 import argparse
+import time
 from multiprocessing import Pool
 
 from tqdm import tqdm
@@ -46,12 +47,14 @@ def main():
 
     rows = read_jsonl(args.input)
     texts = list(dict.fromkeys(r[args.field] for r in rows))  # unique texts, in order
+    start = time.perf_counter()
     if args.workers > 1:
         with Pool(args.workers, initializer=_init, initargs=(args.segmenter,)) as pool:
             docs = list(tqdm(pool.imap(_segment, texts, chunksize=4), total=len(texts)))
     else:
         _init(args.segmenter)
         docs = [_segment(t) for t in tqdm(texts)]
+    seconds = time.perf_counter() - start  # wall time; with --workers > 1, divided over the processes
     by_text = dict(zip(texts, docs))
     write_jsonl(args.output, [{"id": r["id"], "doc": by_text[r[args.field]]} for r in rows])
     metadata = build_metadata(
@@ -62,6 +65,9 @@ def main():
         rows=len(rows),
         unique_texts=len(texts),
     )
+    # DATN §4.4 latency: the segmenter is part of ViWord-C's end-to-end compression time
+    metadata["timing"] = {"seconds": round(seconds, 3), "workers": args.workers,
+                          "ms_per_text": round(1000 * seconds * args.workers / max(len(texts), 1), 3)}
     sidecar = write_metadata(args.output, metadata)
     print(f"wrote {len(rows)} documents ({len(texts)} unique texts) to {args.output}")
     print(f"wrote segmentation metadata to {sidecar}")

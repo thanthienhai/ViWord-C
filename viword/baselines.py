@@ -146,6 +146,15 @@ class TfidfSentences:
         return _select_sentences(context, scores, budget, counter)
 
 
+def lm_dtype(torch, device: str):
+    """Load dtype of the causal LMs (bf16 checkpoints): their own dtype ("auto"), except fp16
+    on GPUs without native bf16 (compute capability < 8, e.g. T4), where bf16 is emulated."""
+    if str(device).startswith("cuda") and torch.cuda.is_available() \
+            and torch.cuda.get_device_capability()[0] < 8:
+        return torch.float16
+    return "auto"
+
+
 class CausalLM:
     """Small helper around a causal LM: per-token surprisal (−log p) of a text."""
 
@@ -156,11 +165,20 @@ class CausalLM:
         self.torch = torch
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype="auto").to(self.device).eval()
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_name, torch_dtype=lm_dtype(torch, self.device)).to(self.device).eval()
         self.max_length = max_length
+        self._cache = {}
 
     def surprisal(self, text: str) -> tuple[list[float], list[tuple[int, int]]]:
-        """Surprisal and character span of every token; chunks of `max_length` tokens."""
+        """Surprisal and character span of every token; chunks of `max_length` tokens.
+        Cached by text: the same context is scored once for all ratios."""
+        if text not in self._cache:
+            self._cache[text] = self._surprisal(text)
+        out, spans = self._cache[text]
+        return list(out), list(spans)
+
+    def _surprisal(self, text: str) -> tuple[list[float], list[tuple[int, int]]]:
         enc = self.tokenizer(text, return_offsets_mapping=True, add_special_tokens=False)
         ids, spans = enc["input_ids"], enc["offset_mapping"]
         out = []
@@ -295,6 +313,33 @@ def _leading_words(text: str, budget: int, counter: TokenCounter) -> str:
     return " ".join(words[:low])
 
 
+class _ForwardCache:
+    """Memoize a token classifier's forward pass by its input tensors (LLMLingua-2's rate search).
+    LLMLingua-2 chunks the text independently of the rate and thresholds the probabilities, so
+    the search over rates then costs one encoder pass per chunk instead of one per step. A
+    perplexity compressor (LLMLingua) conditions on the rate-dependent kept prefix, so it is not
+    wrapped. Bounded: the cache is cleared after `max_entries` distinct inputs."""
+
+    def __init__(self, model, max_entries: int = 256):
+        self._model, self._cache, self._max = model, {}, max_entries
+
+    def __getattr__(self, name):
+        return getattr(self._model, name)
+
+    def __call__(self, *args, **kwargs):
+        try:
+            key = tuple((k, v.shape, v.cpu().numpy().tobytes()) if hasattr(v, "shape") else (k, repr(v))
+                        for k, v in sorted(kwargs.items())) + tuple(
+                (a.shape, a.cpu().numpy().tobytes()) if hasattr(a, "shape") else repr(a) for a in args)
+        except Exception:  # unexpected input type: no caching
+            return self._model(*args, **kwargs)
+        if key not in self._cache:
+            if len(self._cache) >= self._max:
+                self._cache.clear()
+            self._cache[key] = self._model(*args, **kwargs)
+        return self._cache[key]
+
+
 class _LegacyKVModel:
     """llmlingua 0.2.2 passes, indexes (``kv[0][0]``) and slices the KV cache as nested
     ``[k, v]`` lists. transformers 5 accepts and returns only ``Cache`` objects, so
@@ -343,8 +388,14 @@ class LLMLinguaOfficial:
         self.name = version + ("_force" if self.force_tokens or force_from_context else "")
         if version == "llmlingua2":
             self.pc = PromptCompressor(model_name=self.LLMLINGUA2, use_llmlingua2=True, device_map=device)
+            # the binary search over `rate` re-runs the classifier on the same chunks at every step;
+            # its keep probabilities do not depend on the rate, so one forward pass per chunk suffices
+            if hasattr(self.pc, "model"):
+                self.pc.model = _ForwardCache(self.pc.model)
         else:  # "llmlingua" or "longllmlingua": perplexity of a small causal LM
-            self.pc = PromptCompressor(model_name=lm_name, device_map=device)
+            import torch
+            self.pc = PromptCompressor(model_name=lm_name, device_map=device,
+                                       model_config={"torch_dtype": lm_dtype(torch, device)})
             self.pc.model = _LegacyKVModel(self.pc.model)
 
     def _at_rate(self, context: Context, rate: float) -> str:

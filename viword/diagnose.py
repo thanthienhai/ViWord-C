@@ -9,7 +9,7 @@ from collections import Counter
 
 import numpy as np
 
-from .protect import TIERS, is_negation, protection_tiers
+from .protect import TIERS, is_negation, protection_tiers, scope_heads
 from .segment import Word, normalize, syllables_of
 
 # ---------------------------------------------------------------------------- compressor families
@@ -162,9 +162,47 @@ def _decode_prediction(tokenizer, token_strs: list[str]) -> str:
     return "".join(text.strip().lower().split())
 
 
+def chance_cbr_counts(words: list[Word], syllable_mask: list[bool]) -> dict[str, float]:
+    """Expected partial and surviving multi-syllable words if the same number of syllables
+    were kept independently at random (keep rate r of this mask over non-punctuation words).
+    Sum both over a corpus and divide, as for `chance_cbr_distribution`."""
+    lengths, kept, total, i = [], 0, 0, 0
+    for w in words:
+        n = len(w.syllables)
+        if not w.is_punct:
+            kept += sum(syllable_mask[i:i + n])
+            total += n
+            if n > 1:
+                lengths.append(n)
+        i += n
+    r = kept / total if total else 0.0
+    partial = sum(1 - r ** n - (1 - r) ** n for n in lengths)
+    survived = sum(1 - (1 - r) ** n for n in lengths)
+    return {"partial": partial, "survived": survived, "keep_rate": r}
+
+
+def scope_counts(words: list[Word], syllable_mask: list[bool]) -> dict[str, int]:
+    """Scope retention (item e): of the kept T1/T2 operators that have a head
+    (`protect.scope_heads`), how many also keep their head. A word counts as kept if any
+    of its syllables is kept."""
+    starts = np.cumsum([0] + [len(w.syllables) for w in words])
+    kept = [any(syllable_mask[starts[k]:starts[k + 1]]) for k in range(len(words))]
+    pairs = scope_heads(words)
+    ops = [(op, head) for op, head in pairs if kept[op]]
+    return {"ops": len(pairs), "ops_kept": len(ops), "ops_kept_with_head": sum(kept[h] for _, h in ops)}
+
+
 def recovery_rate(words: list[Word], syllable_mask: list[bool], mlm, max_words: int = 50,
                   window: int = 100) -> float:
     """RR (DATN §2.2): share of broken words whose missing syllables a masked LM restores.
+    See `recovery_counts`."""
+    hits, total = recovery_counts(words, syllable_mask, mlm, max_words, window)
+    return hits / total if total else float("nan")
+
+
+def recovery_counts(words: list[Word], syllable_mask: list[bool], mlm, max_words: int = 50,
+                    window: int = 100) -> tuple[int, int]:
+    """(recovered, checked) broken words; checked − recovered are the harmful cuts.
 
     For each broken word, the missing syllables are replaced by as many mask tokens as
     their tokenizer uses inside the compressed context (±`window` syllables). The MLM's
@@ -205,7 +243,7 @@ def recovery_rate(words: list[Word], syllable_mask: list[bool], mlm, max_words: 
                 recovered = False
                 break
         hits += recovered
-    return hits / total if total else float("nan")
+    return hits, total
 
 
 # ---------------------------------------------------------------------------- P2: function words

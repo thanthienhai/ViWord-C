@@ -40,6 +40,7 @@ def load_segmented(directory: str, source: str) -> dict[str, dict]:
 
 
 SHEET = "blind-v1"
+SHEETS = {"blind-v1", "blind-v2"}  # blind-v2: the larger probe sheet drawn with the detector-v2 audit
 
 
 def evaluate(labels_path: str, segmented_dir: str, min_rows: int = 50) -> dict:
@@ -56,8 +57,8 @@ def evaluate(labels_path: str, segmented_dir: str, min_rows: int = 50) -> dict:
         if key in seen:
             raise ValueError(f"duplicate annotation: {key[0]}:{key[1]}")
         seen.add(key)
-        if row.get("sheet") != SHEET:
-            raise ValueError(f"{key[0]}:{key[1]}: labels must come from a blind sheet ({SHEET}, "
+        if row.get("sheet") not in SHEETS:
+            raise ValueError(f"{key[0]}:{key[1]}: labels must come from a blind sheet ({sorted(SHEETS)}, "
                              "scripts/make_annotation_sheets.py)")
         if not row.get("annotator"):
             raise ValueError(f"missing annotator for {key[0]}:{key[1]}")
@@ -94,7 +95,7 @@ def evaluate(labels_path: str, segmented_dir: str, min_rows: int = 50) -> dict:
     recall = tp / gold if gold and n_unedited else None
     f1 = 2 * precision * recall / (precision + recall) if recall and precision + recall else None
     return {
-        "sheet": SHEET,
+        "sheet": labels[0]["sheet"] if labels else SHEET,
         "n_unedited": n_unedited,
         "n_premises": len(labels),
         "sources": sorted(sources),

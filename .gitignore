@@ -228,3 +228,6 @@ models/
 runs/
 results/eval/
 results/gate/*.jsonl
+
+# encoder logit and reader output caches (scripts/run_pipeline.sh)
+cache/

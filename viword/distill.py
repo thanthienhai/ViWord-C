@@ -29,10 +29,21 @@ Văn bản:
 {text}"""
 
 
-def teacher_prompt(text: str, rate: float) -> str:
+# Item g (H2): the default prompt asks to keep facts, numbers, names and negation, so H2 measures
+# only the gain of π on top of what the teacher already protects. The neutral prompt drops that
+# line (and nothing else), for a small descriptive checkpoint that estimates π's full value.
+TEACHER_PROMPTS = {
+    "default": TEACHER_PROMPT,
+    "neutral": TEACHER_PROMPT.replace(
+        "- Giữ lại những thông tin quan trọng nhất (sự kiện, con số, tên riêng, phủ định).\n", ""),
+}
+assert TEACHER_PROMPTS["neutral"] != TEACHER_PROMPT
+
+
+def teacher_prompt(text: str, rate: float, prompt: str = "default") -> str:
     n = len(text.split())
     target = max(1, round(n * rate))
-    return TEACHER_PROMPT.format(n=n, target=target, upper=round(target * 1.1), text=text)
+    return TEACHER_PROMPTS[prompt].format(n=n, target=target, upper=round(target * 1.1), text=text)
 
 
 class TruncatedResponse(RuntimeError):
@@ -40,7 +51,8 @@ class TruncatedResponse(RuntimeError):
     would pass for a good one at a lower rate; it is raised instead of returned."""
 
 
-def teacher_compress(client, model: str, text: str, rate: float, max_tokens: int = 4096) -> str:
+def teacher_compress(client, model: str, text: str, rate: float, max_tokens: int = 4096,
+                     prompt: str = "default") -> str:
     """One deletion-only compression by the teacher through an OpenAI-compatible chat API
     (a `vllm serve` endpoint, OpenAI, or FPT token-api with GLM-5.2). Only the output text
     is used, no logits. Greedy decoding; thinking mode is disabled, both the vLLM way
@@ -49,7 +61,7 @@ def teacher_compress(client, model: str, text: str, rate: float, max_tokens: int
     empty answer. Any leftover <think> block is removed."""
     response = client.chat.completions.create(
         model=model,
-        messages=[{"role": "user", "content": teacher_prompt(text, rate)}],
+        messages=[{"role": "user", "content": teacher_prompt(text, rate, prompt)}],
         temperature=0.0,
         max_tokens=max_tokens,
         extra_body={"chat_template_kwargs": {"enable_thinking": False}, "thinking": {"type": "disabled"}},

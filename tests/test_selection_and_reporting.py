@@ -63,8 +63,13 @@ def test_scored_compressor_exposes_last_stats():
 def test_row_cbr_counts_broken_multisyllable_words():
     from scripts.evaluate import row_cbr
     ctx = Context(text="học sinh đi học", doc=[[W("học sinh", "N"), W("đi", "V"), W("học", "V")]])
-    assert row_cbr(ctx, "học đi học") == {"cbr_partial": 1, "cbr_full": 0, "cbr": 1.0}
-    assert row_cbr(ctx, "học sinh") == {"cbr_partial": 0, "cbr_full": 1, "cbr": 0.0}
+    cbr_keys = ("cbr_partial", "cbr_full", "cbr")
+    broken = row_cbr(ctx, "học đi học")
+    assert {k: broken[k] for k in cbr_keys} == {"cbr_partial": 1, "cbr_full": 0, "cbr": 1.0}
+    assert {k: row_cbr(ctx, "học sinh")[k] for k in cbr_keys} == {"cbr_partial": 0, "cbr_full": 1, "cbr": 0.0}
+    # random deletion at the same keep rate (3 of 4 syllables): partial 1 − r² − (1−r)², survived 1 − (1−r)²
+    assert broken["cbr_chance_partial"] == 0.375 and broken["cbr_chance_survived"] == 0.9375
+    assert broken["tier_kept"] == {"all": [3, 3]}
     assert row_cbr(Context(text="x"), "x") == {}
 
 

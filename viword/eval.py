@@ -242,6 +242,11 @@ class VLLMReader:
 
         # lower VIWORD_VLLM_GPU_UTIL (e.g. 0.7) if the GPU is shared or runs out of memory
         kwargs.setdefault("gpu_memory_utilization", float(os.environ.get("VIWORD_VLLM_GPU_UTIL", 0.9)))
+        # GPUs without native bf16 (T4): VIWORD_VLLM_DTYPE=half; a 7B reader on 2×T4: VIWORD_VLLM_TP=2
+        kwargs.setdefault("dtype", os.environ.get("VIWORD_VLLM_DTYPE", "auto"))
+        kwargs.setdefault("tensor_parallel_size", int(os.environ.get("VIWORD_VLLM_TP", 1)))
+        # every prompt of a task shares the instruction prefix (and, across methods, the question)
+        kwargs.setdefault("enable_prefix_caching", True)
         self.name = model
         self.llm = LLM(model=model, max_model_len=max_model_len, **kwargs)
         self.tokenizer = self.llm.get_tokenizer()

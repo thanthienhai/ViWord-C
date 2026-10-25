@@ -9,6 +9,13 @@
 #   bash scripts/run_pipeline.sh protect_eval diagnose     # after train, also measures CBR for llmlingua2vi_s*
 #   bash scripts/run_pipeline.sh teacher_test eval bertscore analyze # teacher upper bound, evaluation
 #
+# Added after the review of 2026-10-24 (none changes a registered hypothesis or family):
+#   annot_sheets_v2        blind-v2 sheets for P detector v2, a larger probe sheet, a segmentation sheet
+#   select_cost_2x2        one cost-aware ranking rule (α or exact DP) for all four 2x2 cells, on dev
+#   teacher_variants       neutral-prompt / open-teacher labels on VARIANT_PARAGRAPHS paragraphs + small checkpoints
+#   seg_alt long_ctx minpairs   inputs of the EVAL_EXTRAS descriptive evaluations inside `eval`
+#   gold_cbr               CBR of every system on human word boundaries (after eval)
+#
 # Every stage reads the previous stage's files, so stages can be run on different machines.
 # Settings can be overridden from the environment, except SEGMENTER: the main
 # pipeline is intentionally fixed to VnCoreNLP.  Use scripts/segment_data.py
@@ -46,8 +53,19 @@ READER_BACKEND=${READER_BACKEND:-vllm}     # vllm | api | hf
 READER_URL=${READER_URL:-}                 # for READER_BACKEND=api
 READER_TOKENIZER=${READER_TOKENIZER:-$READER}
 # blind sheets from `annot_sheets`, filled in by a human annotator (DATN §3.4, G6)
-PROTECT_LABELS=${PROTECT_LABELS:-data/annot/protect_sheet.jsonl}
-PROBE_LABELS=${PROBE_LABELS:-data/annot/probe_sheet.jsonl}
+# P detector v2 (viword/protect.py) is audited on new blind-v2 sheets, never on the blind-v1 ones used to find
+# the v1 errors; VIWORD_P_DETECTOR=v1 keeps the v1 rules and their audit
+export VIWORD_P_DETECTOR=${VIWORD_P_DETECTOR:-v2}
+PROTECT_LABELS_V1=data/annot/protect_sheet.jsonl
+PROBE_LABELS_V1=data/annot/probe_sheet.jsonl
+if [ "$VIWORD_P_DETECTOR" = v1 ]; then
+  PROTECT_LABELS=${PROTECT_LABELS:-$PROTECT_LABELS_V1}
+  PROBE_LABELS=${PROBE_LABELS:-$PROBE_LABELS_V1}
+else
+  PROTECT_LABELS=${PROTECT_LABELS:-data/annot/protect_sheet_v2.jsonl}
+  PROBE_LABELS=${PROBE_LABELS:-data/annot/probe_sheet_v2.jsonl}
+fi
+GOLD_SEGMENTATION=${GOLD_SEGMENTATION:-data/annot/segmentation_sheet.jsonl}   # human word boundaries (item a)
 PROTECT_REPORT=${PROTECT_REPORT:-results/protect_eval.json}
 PROBE_REPORT=${PROBE_REPORT:-results/probe_negation_eval.json}
 PI_SELECTED_ENV=${PI_SELECTED_ENV:-config/pi_selected.env}
@@ -85,6 +103,27 @@ RATIOS="0.5 0.333 0.2"
 LL2=microsoft/llmlingua-2-xlm-roberta-large-meetingbank
 RR_MODEL=${RR_MODEL:-xlm-roberta-large}        # DATN §2.2/§4.0 RR MLM
 
+# cost cuts that change no result: encoder logits once per checkpoint × data set (every π/α/budget/reader variant
+# then selects on CPU), and one reader call per distinct prompt, reused across stages (greedy decoding)
+export VIWORD_LOGIT_CACHE=${VIWORD_LOGIT_CACHE:-cache/logits}
+export VIWORD_READER_CACHE=${VIWORD_READER_CACHE:-cache/reader_outputs.jsonl}
+SECOND_READER_FULL=${SECOND_READER_FULL:-0}   # 0: a non-primary reader gets (i), (iv), LLMLingua-2, truncation at 1/3
+VIETNEWS_FULL=${VIETNEWS_FULL:-0}             # 0: VietNews gets the Table 5 (H2) systems and a few baselines
+LONGLLMLINGUA=${LONGLLMLINGUA:-1}             # reference only; 0 skips it when resources are short
+# added descriptive analyses (outside the registered H1/H2 families)
+H1_CONTROLS=${H1_CONTROLS:-1}                 # cells iii-rand (runs/softrand_s*) and iv-wordloss (runs/wordloss_s*)
+SCOPE_BONUS=${SCOPE_BONUS:-0.2}               # operator-scope bonus on top of π (ViNLI); 0 = off
+QREL=${QREL:-0}                               # question-relevance bonus (MC/QA), e.g. 0.3; 0 = off
+HARMFUL_CUTS=${HARMFUL_CUTS:-1}               # MLM harmful-cut counts of (i) for the H1 mechanism regression
+COST2X2_SELECTED_ENV=${COST2X2_SELECTED_ENV:-config/cost2x2_selected.env}
+COST2X2_SELECTED_JSON=${COST2X2_SELECTED_JSON:-config/cost2x2_selected.json}
+EVAL_EXTRAS=${EVAL_EXTRAS:-}                  # seg_sensitivity variants long_ctx minpairs (see stage_eval)
+VARIANT_PARAGRAPHS=${VARIANT_PARAGRAPHS:-1000}
+OPEN_TEACHER_URL=${OPEN_TEACHER_URL:-}        # an open-weights teacher (e.g. `vllm serve Qwen/Qwen2.5-32B-Instruct`)
+OPEN_TEACHER_MODEL=${OPEN_TEACHER_MODEL:-}
+LONG_TARGET_SYLLABLES=${LONG_TARGET_SYLLABLES:-2500}
+LONG_LIMIT=${LONG_LIMIT:-300}
+
 # task name : file stem : field that is compressed
 TEST_SETS="belebele:belebele:context vinli:vinli_test:premise vimmrc:vimmrc_test:context vietnews:vietnews_test:context
            viquad:viquad_test:context gsm8k:gsm8k_test:context oneruler:oneruler_test:context"
@@ -114,7 +153,7 @@ require_annotations() {  # P detector (D4) and negation probe (G6) audited on bl
     echo "missing $PROBE_REPORT; run: bash scripts/run_pipeline.sh protect_eval" >&2
     exit 1
   }
-  python -c "import json,sys; r=json.load(open(sys.argv[1],encoding='utf-8')); sys.exit(0 if r.get('sheet')=='blind-v1' else 'probe audit was not computed from a blind sheet: '+sys.argv[1])" "$PROBE_REPORT"
+  python -c "import json,sys; r=json.load(open(sys.argv[1],encoding='utf-8')); sys.exit(0 if r.get('sheet') in ('blind-v1','blind-v2') else 'probe audit was not computed from a blind sheet: '+sys.argv[1])" "$PROBE_REPORT"
 }
 
 require_primary_reader() {  # dev decisions are made once, with the primary reader
@@ -350,9 +389,14 @@ stage_distill() {
 }
 
 stage_train() {
+  units="word syllable"
+  [ "$H1_CONTROLS" = 1 ] && units="$units syllable_softrand word_pooled"  # cells iii-rand, iv-wordloss
   for s in $SEEDS; do
-    for unit in word syllable; do
-      name=$([ "$unit" = word ] && echo viword || echo llmlingua2vi)
+    for unit in $units; do
+      case "$unit" in
+        word) name=viword ;; syllable) name=llmlingua2vi ;;
+        syllable_softrand) name=softrand ;; word_pooled) name=wordloss ;;
+      esac
       log "train $name seed $s"
       python scripts/train.py --distilled data/distill/distilled.jsonl --label-unit "$unit" \
         --out "runs/${name}_s$s" --seed "$s"
@@ -563,6 +607,12 @@ stage_eval() {
            "scored:model=$LL2,unit=syllable,name=llmlingua2_syl"
            "scored:model=$LL2,unit=word,name=llmlingua2_wordpool"
            "$(lexprior_spec)")
+  # cost cut (p.8): a reader other than the primary one is descriptive; by default it gets (i), (iv),
+  # the published LLMLingua-2 and truncation at 1/3 only (SECOND_READER_FULL=1 for the whole table)
+  core_methods=(none no_context truncation llmlingua2)
+  # VietNews only serves the H2 non-inferiority test (Table 5); the rest of it is descriptive (p.8)
+  vietnews_methods=(none no_context lead truncation llmlingua2)
+  scope_methods=() qrel_methods=()
   for s in $SEEDS; do
     methods+=("scored:model=runs/llmlingua2vi_s$s,unit=syllable,name=llmlingua2vi_s$s"
               "scored:model=runs/llmlingua2vi_s$s,unit=word,name=llmlingua2vi_wordpool_s$s"
@@ -571,7 +621,41 @@ stage_eval() {
               "scored:model=runs/llmlingua2vi_s$s,unit=syllable,protect=force,tiers=$PI_TIERS,name=llmlingua2vi_force_s$s"
               "scored:model=runs/llmlingua2vi_s$s,unit=syllable,protect=force_ctx,tiers=$PI_TIERS,name=llmlingua2vi_forcectx_s$s"
               "scored:model=runs/viword_s$s,unit=word,protect=$PI_MODE,delta=$PI_DELTA,tiers=$PI_TIERS,name=viword_pi_s$s")
+    core_methods+=("scored:model=runs/llmlingua2vi_s$s,unit=syllable,name=llmlingua2vi_s$s"
+                   "scored:model=runs/viword_s$s,unit=word,name=viword_s$s")
+    vietnews_methods+=("scored:model=runs/llmlingua2vi_s$s,unit=syllable,name=llmlingua2vi_s$s"
+                       "scored:model=runs/viword_s$s,unit=word,name=viword_s$s"
+                       "scored:model=runs/llmlingua2vi_s$s,unit=syllable,protect=force,tiers=$PI_TIERS,name=llmlingua2vi_force_s$s"
+                       "scored:model=runs/llmlingua2vi_s$s,unit=syllable,protect=force_ctx,tiers=$PI_TIERS,name=llmlingua2vi_forcectx_s$s"
+                       "scored:model=runs/viword_s$s,unit=word,protect=$PI_MODE,delta=$PI_DELTA,tiers=$PI_TIERS,name=viword_pi_s$s")
+    if [ "$H1_CONTROLS" = 1 ]; then  # cells iii-rand and iv-wordloss (descriptive, outside the H1 family)
+      for control in softrand wordloss; do
+        [ -d "runs/${control}_s$s" ] || { echo "missing runs/${control}_s$s (H1_CONTROLS=1); run train" >&2; exit 1; }
+      done
+      methods+=("scored:model=runs/softrand_s$s,unit=syllable,name=softrand_syl_s$s"
+                "scored:model=runs/wordloss_s$s,unit=word,name=viword_wl_s$s")
+    fi
+    if [ "$SCOPE_BONUS" != 0 ]; then  # operator scope on top of the selected π (ViNLI, descriptive)
+      scope_methods+=("scored:model=runs/viword_s$s,unit=word,protect=$PI_MODE,delta=$PI_DELTA,tiers=$PI_TIERS,scope=$SCOPE_BONUS,name=viword_pi_scope_s$s")
+    fi
+    if [ "$QREL" != 0 ]; then  # question-aware selection (reading comprehension and QA, descriptive)
+      qrel_methods+=("scored:model=runs/viword_s$s,unit=word,qrel=$QREL,name=viword_qrel_s$s")
+    fi
   done
+  # cost-aware 2x2 (item d): the dev-selected rule for all four cells, outside the registered H1 family
+  if [ -s "$COST2X2_SELECTED_ENV" ] && git ls-files --error-unmatch "$COST2X2_SELECTED_ENV" >/dev/null 2>&1 \
+     && git diff --quiet -- "$COST2X2_SELECTED_ENV"; then
+    # shellcheck disable=SC1090
+    . "$COST2X2_SELECTED_ENV"
+    if [ "${COST2X2_TAG:-a0}" != a0 ]; then
+      for s in $SEEDS; do
+        methods+=("scored:model=runs/llmlingua2vi_s$s,unit=syllable,$COST2X2_SPEC,name=llmlingua2vi_ca${COST2X2_TAG}_s$s"
+                  "scored:model=runs/llmlingua2vi_s$s,unit=word,$COST2X2_SPEC,name=llmlingua2vi_wordpool_ca${COST2X2_TAG}_s$s"
+                  "scored:model=runs/viword_s$s,unit=syllable,$COST2X2_SPEC,name=viword_syl_ca${COST2X2_TAG}_s$s"
+                  "scored:model=runs/viword_s$s,unit=word,$COST2X2_SPEC,name=viword_ca${COST2X2_TAG}_s$s")
+      done
+    fi
+  fi
   # H3 rows (8-page version) only when α was selected on dev and committed
   if [ -s "$ALPHA_SELECTED_ENV" ] && git ls-files --error-unmatch "$ALPHA_SELECTED_ENV" >/dev/null 2>&1 \
      && git diff --quiet -- "$ALPHA_SELECTED_ENV"; then
@@ -584,6 +668,10 @@ stage_eval() {
     done
   fi
   reader_tag=$(basename "$READER")
+  subset_reader=0
+  [ "$READER" != "$PRIMARY_READER" ] && [ "$SECOND_READER_FULL" != 1 ] && subset_reader=1
+  rr_args=()  # harmful cuts of (i) for the H1 mechanism regression (MLM in the compression phase)
+  [ "$HARMFUL_CUTS" = 1 ] && rr_args=(--rr-model "$RR_MODEL" --rr-methods llmlingua2vi_s)
   for spec in $TEST_SETS; do
     IFS=: read -r task stem _ <<< "$spec"
     teacher_path="results/teacher_test/$stem.jsonl"
@@ -591,14 +679,24 @@ stage_eval() {
       echo "missing $teacher_path; run: bash scripts/run_pipeline.sh teacher_test before eval" >&2
       exit 1
     }
-    task_methods=("${methods[@]}")
-    if [ "$task" = vimmrc ] || [ "$task" = belebele ]; then
-      task_methods+=("longllmlingua:lm=$LM")
+    task_ratios=$RATIOS
+    if [ "$subset_reader" = 1 ]; then
+      task_methods=("${core_methods[@]}")
+      task_ratios=0.333
+    elif [ "$task" = vietnews ] && [ "$VIETNEWS_FULL" != 1 ]; then
+      task_methods=("${vietnews_methods[@]}")
+    else
+      task_methods=("${methods[@]}")
+      if [ "$LONGLLMLINGUA" = 1 ] && { [ "$task" = vimmrc ] || [ "$task" = belebele ]; }; then
+        task_methods+=("longllmlingua:lm=$LM")
+      fi
+      [ "$task" = belebele ] && task_methods+=("translate:inner=llmlingua2")
+      [ "$task" = vinli ] && task_methods+=(probe_negation ${scope_methods[@]+"${scope_methods[@]}"})
+      case "$task" in vimmrc|belebele|viquad) task_methods+=(${qrel_methods[@]+"${qrel_methods[@]}"}) ;; esac
     fi
-    [ "$task" = belebele ] && task_methods+=("translate:inner=llmlingua2")
-    [ "$task" = vinli ] && task_methods+=(probe_negation)
     # the only reader calls on unseen test rows (viword/heldout.py); every check above has passed.
     # The teacher upper bound uses the same rows as stage_teacher_test: the first unseen ones
+    if [ "$subset_reader" = 0 ]; then
     log "evaluate teacher upper bound on $task ($TEACHER_TEST_LIMIT samples)"
     VIWORD_TEST_EVAL=1 python scripts/evaluate.py --task "$task" --data "data/tasks/$stem.jsonl" \
       --segmented "data/segmented/$stem.jsonl" --reader "$READER" --backend "$READER_BACKEND" \
@@ -606,12 +704,203 @@ stage_eval() {
       --exclude "$TEST_EXCLUSIONS" --limit "$TEACHER_TEST_LIMIT" \
       --methods "precomputed:path=$teacher_path,name=teacher_upper" \
       --out "results/eval/teacher_upper_${task}_${reader_tag}.jsonl"
+    fi
     log "evaluate $task with $READER"
     VIWORD_TEST_EVAL=1 python scripts/evaluate.py --task "$task" --data "data/tasks/$stem.jsonl" \
       --segmented "data/segmented/$stem.jsonl" --reader "$READER" --backend "$READER_BACKEND" \
-      ${READER_URL:+--base-url $READER_URL} --tokenizer "$READER_TOKENIZER" --ratios $RATIOS $LIMIT_ARG \
-      --methods "${task_methods[@]}" --out "results/eval/${task}_${reader_tag}.jsonl"
+      ${READER_URL:+--base-url $READER_URL} --tokenizer "$READER_TOKENIZER" --ratios $task_ratios $LIMIT_ARG \
+      ${rr_args[@]+"${rr_args[@]}"} --methods "${task_methods[@]}" --out "results/eval/${task}_${reader_tag}.jsonl"
   done
+  # descriptive extensions on the same unseen rows, after the same checks (EVAL_EXTRAS, space-separated):
+  #   seg_sensitivity  (i)/(iv) at 1/3 with underthesea/pyvi segmentations (stage_seg_alt makes them)
+  #   variants         small checkpoints of the neutral prompt / open teacher (stage_teacher_variants)
+  #   long_ctx         passages among distractors, a few thousand tokens (stage_long_ctx makes the data)
+  #   minpairs         operator-only ViNLI pairs (dev/train premises; reviewed file)
+  extra_eval() {  # extra_eval TASK DATA SEGMENTED OUT RATIOS METHOD...
+    local task=$1 data=$2 segmented=$3 out=$4 ratios=$5
+    shift 5
+    VIWORD_TEST_EVAL=1 python scripts/evaluate.py --task "$task" --data "$data" --segmented "$segmented" \
+      --reader "$READER" --backend "$READER_BACKEND" ${READER_URL:+--base-url $READER_URL} \
+      --tokenizer "$READER_TOKENIZER" --ratios $ratios --methods "$@" --out "$out"
+  }
+  for extra in $EVAL_EXTRAS; do
+    case "$extra" in
+      seg_sensitivity)
+        mkdir -p results/seg_sensitivity
+        for seg in underthesea pyvi; do
+          for spec in vinli:vinli_test belebele:belebele vimmrc:vimmrc_test; do
+            IFS=: read -r task stem <<< "$spec"
+            [ -s "data/segmented_$seg/$stem.jsonl" ] || { echo "missing data/segmented_$seg/$stem.jsonl; run seg_alt" >&2; exit 1; }
+            log "segmenter sensitivity: $task with $seg"
+            seg_methods=(none)
+            for s in $SEEDS; do
+              seg_methods+=("scored:model=runs/llmlingua2vi_s$s,unit=syllable,name=llmlingua2vi_s$s"
+                            "scored:model=runs/viword_s$s,unit=word,name=viword_s$s")
+            done
+            extra_eval "$task" "data/tasks/$stem.jsonl" "data/segmented_$seg/$stem.jsonl" \
+              "results/seg_sensitivity/${task}_${seg}_${reader_tag}.jsonl" 0.333 "${seg_methods[@]}"
+          done
+        done ;;
+      variants)
+        mkdir -p results/variants
+        variant_methods=(none)
+        for name in viword_small llmlingua2vi_small viword_neutral viword_open llmlingua2vi_open; do
+          [ -d "runs/${name}_s0" ] || continue
+          unit=$([ "${name#viword}" != "$name" ] && echo word || echo syllable)
+          variant_methods+=("scored:model=runs/${name}_s0,unit=$unit,name=${name}_s0")
+          [ "$unit" = word ] && variant_methods+=("scored:model=runs/${name}_s0,unit=word,protect=$PI_MODE,delta=$PI_DELTA,tiers=$PI_TIERS,name=${name}_pi_s0")
+        done
+        for spec in vinli:vinli_test vimmrc:vimmrc_test belebele:belebele; do
+          IFS=: read -r task stem <<< "$spec"
+          log "teacher variants on $task"
+          extra_eval "$task" "data/tasks/$stem.jsonl" "data/segmented/$stem.jsonl" \
+            "results/variants/${task}_${reader_tag}.jsonl" "$RATIOS" "${variant_methods[@]}"
+        done ;;
+      long_ctx)
+        mkdir -p results/long_ctx
+        for spec in belebele:belebele_long vimmrc:vimmrc_test_long; do
+          IFS=: read -r task stem <<< "$spec"
+          [ -s "data/segmented/$stem.jsonl" ] || { echo "missing data/segmented/$stem.jsonl; run long_ctx" >&2; exit 1; }
+          long_methods=(none no_context truncation llmlingua2)
+          for s in $SEEDS; do
+            long_methods+=("scored:model=runs/llmlingua2vi_s$s,unit=syllable,name=llmlingua2vi_s$s"
+                           "scored:model=runs/viword_s$s,unit=word,name=viword_s$s"
+                           "scored:model=runs/viword_s$s,unit=word,protect=$PI_MODE,delta=$PI_DELTA,tiers=$PI_TIERS,name=viword_pi_s$s")
+          done
+          log "long context: $stem"
+          extra_eval "$task" "data/tasks/$stem.jsonl" "data/segmented/$stem.jsonl" \
+            "results/long_ctx/${stem}_${reader_tag}.jsonl" "0.333 0.2" "${long_methods[@]}"
+        done ;;
+      minpairs)
+        [ -s data/segmented/vinli_minpairs.jsonl ] || { echo "missing data/segmented/vinli_minpairs.jsonl" >&2; exit 1; }
+        mp_methods=(none "random:seed=0" "random:seed=1" "random:seed=2")
+        for s in $SEEDS; do
+          mp_methods+=("scored:model=runs/llmlingua2vi_s$s,unit=syllable,name=llmlingua2vi_s$s"
+                       "scored:model=runs/viword_s$s,unit=word,name=viword_s$s"
+                       "scored:model=runs/llmlingua2vi_s$s,unit=syllable,protect=force,tiers=$PI_TIERS,name=llmlingua2vi_force_s$s"
+                       "scored:model=runs/viword_s$s,unit=word,protect=$PI_MODE,delta=$PI_DELTA,tiers=$PI_TIERS,name=viword_pi_s$s")
+        done
+        mkdir -p results/minpairs
+        extra_eval vinli data/tasks/vinli_minpairs.jsonl data/segmented/vinli_minpairs.jsonl \
+          "results/minpairs/vinli_minpairs_${reader_tag}.jsonl" "$RATIOS" "${mp_methods[@]}" ;;
+      *) echo "unknown EVAL_EXTRAS entry: $extra" >&2; exit 1 ;;
+    esac
+  done
+}
+
+stage_seg_alt() {  # §4.4 / item a: underthesea and pyvi segmentations of three test sets (no reader)
+  for seg in underthesea pyvi; do
+    mkdir -p "data/segmented_$seg"
+    for spec in vinli:vinli_test:premise belebele:belebele:context vimmrc:vimmrc_test:context; do
+      IFS=: read -r _ stem field <<< "$spec"
+      log "segment $stem with $seg"
+      python scripts/segment_data.py --input "data/tasks/$stem.jsonl" --field "$field" \
+        --output "data/segmented_$seg/$stem.jsonl" --segmenter "$seg" --workers "$SEG_WORKERS"
+    done
+  done
+}
+
+stage_long_ctx() {  # item 10: build and segment the long-context sets (no reader; eval reads them via EVAL_EXTRAS)
+  require_committed_exclusions
+  for spec in belebele:belebele_long vimmrc_test:vimmrc_test_long; do
+    IFS=: read -r src stem <<< "$spec"
+    python scripts/make_long_context.py --input "data/tasks/$src.jsonl" --exclude "$TEST_EXCLUSIONS" \
+      --target-syllables "$LONG_TARGET_SYLLABLES" --limit "$LONG_LIMIT" --out "data/tasks/$stem.jsonl"
+    python scripts/segment_data.py --input "data/tasks/$stem.jsonl" --field context \
+      --output "data/segmented/$stem.jsonl" --segmenter "$SEGMENTER" --workers "$SEG_WORKERS"
+  done
+}
+
+stage_minpairs() {  # item 9: candidate minimal pairs from dev/train premises, for human review
+  require_segmented
+  python scripts/make_minimal_pairs.py --sources vinli_dev vinli_train --n "${MINPAIRS_N:-300}" \
+    --out data/annot/vinli_minpairs_review.jsonl
+  echo "review data/annot/vinli_minpairs_review.jsonl (set needs_review false), then:" >&2
+  echo "  python scripts/make_minimal_pairs.py --reviewed-only data/annot/vinli_minpairs_review.jsonl --out data/tasks/vinli_minpairs.jsonl" >&2
+  echo "  python scripts/segment_data.py --input data/tasks/vinli_minpairs.jsonl --field premise --output data/segmented/vinli_minpairs.jsonl" >&2
+}
+
+stage_teacher_variants() {  # items g and 11: neutral prompt and open teacher on VARIANT_PARAGRAPHS paragraphs
+  require_segmented
+  variants=(neutral)
+  [ -n "$OPEN_TEACHER_MODEL" ] && variants+=(open)
+  for variant in "${variants[@]}"; do
+    if [ "$variant" = neutral ]; then
+      url=$TEACHER_URL model=$TEACHER_MODEL prompt=neutral
+    else
+      url=${OPEN_TEACHER_URL:?set OPEN_TEACHER_URL for the open teacher} model=$OPEN_TEACHER_MODEL prompt=default
+    fi
+    log "teacher variant $variant ($model, prompt $prompt) on $VARIANT_PARAGRAPHS paragraphs"
+    python scripts/teacher_compress.py --input data/distill/paragraphs_clean.jsonl --field text \
+      --limit "$VARIANT_PARAGRAPHS" --rates 0.5 0.25 --prompt "$prompt" \
+      --output "data/distill/teacher_$variant.jsonl" \
+      --base-url "$url" --model "$model" --workers "$TEACHER_WORKERS" --max-tokens "$TEACHER_MAX_TOKENS"
+    python scripts/distill.py --paragraphs data/distill/paragraphs_clean.jsonl \
+      --segmented data/segmented/paragraphs_clean.jsonl --teacher "data/distill/teacher_$variant.jsonl" \
+      --output "data/distill/distilled_$variant.jsonl" | tee "data/distill/distill_summary_$variant.json"
+    python scripts/teacher_agreement.py --a data/distill/distilled.jsonl --b "data/distill/distilled_$variant.jsonl" \
+      --out "results/teacher_agreement_$variant.md"
+  done
+  # matched checkpoints: the main teacher on the same paragraphs, then each variant (one seed, descriptive)
+  small_args=(--ids-from data/distill/distilled_neutral.jsonl --dev-paragraphs "${VARIANT_DEV_PARAGRAPHS:-100}" --seed 0)
+  python scripts/train.py --distilled data/distill/distilled.jsonl --label-unit word --out runs/viword_small_s0 "${small_args[@]}"
+  python scripts/train.py --distilled data/distill/distilled.jsonl --label-unit syllable --out runs/llmlingua2vi_small_s0 "${small_args[@]}"
+  python scripts/train.py --distilled data/distill/distilled_neutral.jsonl --label-unit word --out runs/viword_neutral_s0 "${small_args[@]}"
+  if [ -n "$OPEN_TEACHER_MODEL" ]; then
+    python scripts/train.py --distilled data/distill/distilled_open.jsonl --label-unit word --out runs/viword_open_s0 "${small_args[@]}"
+    python scripts/train.py --distilled data/distill/distilled_open.jsonl --label-unit syllable --out runs/llmlingua2vi_open_s0 "${small_args[@]}"
+  fi
+}
+
+stage_gold_cbr() {  # item a: CBR of every system (teacher included) on human word boundaries, after eval
+  [ -s "$GOLD_SEGMENTATION" ] || { echo "missing $GOLD_SEGMENTATION (annot_sheets_v2, then annotate)" >&2; exit 1; }
+  reader_tag=$(basename "$PRIMARY_READER")
+  mkdir -p results/gold_cbr
+  python scripts/gold_cbr.py --gold "$GOLD_SEGMENTATION" --segmented data/segmented/vinli_test.jsonl \
+    --compressed "results/eval/vinli_${reader_tag}.compressed.jsonl" \
+                 "results/eval/teacher_upper_vinli_${reader_tag}.compressed.jsonl" \
+    --out results/gold_cbr/vinli.md --json-out results/gold_cbr/vinli.json
+}
+
+stage_annot_sheets_v2() {  # items f and 12: new blind sheets for detector v2, a larger probe sheet, segmentation
+  require_segmented
+  python scripts/make_annotation_sheets.py --segmented-dir data/segmented --tasks-dir data/tasks \
+    --sheet blind-v2 --exclude-sheets "$PROTECT_LABELS_V1" "$PROBE_LABELS_V1" --seed 1 --per-group 100 \
+    --protect-out "$PROTECT_LABELS" --probe-out "$PROBE_LABELS" --only protect probe
+  python scripts/make_annotation_sheets.py --tasks-dir data/tasks --only segmentation \
+    --segmentation-out "$GOLD_SEGMENTATION" --segmentation-n "${GOLD_SEGMENTATION_N:-300}"
+}
+
+stage_select_cost_2x2() {  # item d: one cost-aware ranking rule for all four 2x2 cells, selected on dev
+  require_primary_reader
+  require_segmented
+  reader_tag=$(basename "$READER")
+  mkdir -p results/cost2x2_dev config
+  cost_methods=(none)
+  for s in $SEEDS; do
+    for cell in "llmlingua2vi:llmlingua2vi:syllable" "llmlingua2vi_wordpool:llmlingua2vi:word" \
+                "viword_syl:viword:syllable" "viword:viword:word"; do
+      IFS=: read -r name ckpt unit <<< "$cell"
+      cost_methods+=("scored:model=runs/${ckpt}_s$s,unit=$unit,name=${name}_s$s")
+      for rule in a0p5:alpha=0.5 a1:alpha=1 dp:exact=1; do
+        IFS=: read -r tag rule_spec <<< "$rule"
+        cost_methods+=("scored:model=runs/${ckpt}_s$s,unit=$unit,$rule_spec,name=${name}_ca${tag}_s$s")
+      done
+    done
+  done
+  rows=()
+  for spec in vinli:vinli_dev vimmrc:vimmrc_dev; do
+    IFS=: read -r task stem <<< "$spec"
+    log "select the 2x2 cost rule on $stem with $READER"
+    out="results/cost2x2_dev/${stem}_${reader_tag}.jsonl"
+    python scripts/evaluate.py --task "$task" --data "data/tasks/$stem.jsonl" \
+      --segmented "data/segmented/$stem.jsonl" --reader "$READER" --backend "$READER_BACKEND" \
+      ${READER_URL:+--base-url $READER_URL} --tokenizer "$READER_TOKENIZER" --ratios $RATIOS \
+      --limit "$PI_DEV_LIMIT" --methods "${cost_methods[@]}" --out "$out"
+    rows+=("$out")
+  done
+  python scripts/select_cost_2x2.py --rows "${rows[@]}" --out "$COST2X2_SELECTED_JSON" --env "$COST2X2_SELECTED_ENV" \
+    --report results/cost2x2_selection.md
 }
 
 stage_bertscore() {  # DATN §4.1: BERTScore (PhoBERT) for VietNews, after eval; separate dir, so analyze ignores it
@@ -632,8 +921,32 @@ analyze_hypotheses() {  # the H1 and H2 runs; arguments are passed on to analyze
     --seed-mode aggregate --seeds $SEEDS \
     --primary-reader "$PRIMARY_READER" --hypothesis H1 \
     --holm-family "H1:tasks=vimmrc+belebele,ratios=0.5+0.333+0.2,reader=primary,test=metric" \
-    --factorial llmlingua2vi llmlingua2vi_wordpool viword_syl viword --margin "$MDE_MARGIN" "$@"
+    --factorial llmlingua2vi llmlingua2vi_wordpool viword_syl viword --margin "$MDE_MARGIN" \
+    --cbr-regression llmlingua2vi "$@"
   echo
+  if [ "$H1_CONTROLS" = 1 ]; then
+    echo "## H1 controls (descriptive): soft labels vs word boundaries"
+    echo "iii vs iii-rand: word labels vs randomly softened syllable labels, both decided per syllable."
+    python scripts/analyze.py --rows results/eval/*.jsonl --target viword_syl --reference softrand_syl \
+      --seed-mode aggregate --seeds $SEEDS --primary-reader "$PRIMARY_READER" --hypothesis none --no-descriptive "$@"
+    echo "iv-wordloss vs (i) and vs (iv): the loss taken on the word."
+    python scripts/analyze.py --rows results/eval/*.jsonl --target viword_wl --reference llmlingua2vi viword \
+      --seed-mode aggregate --seeds $SEEDS --primary-reader "$PRIMARY_READER" --hypothesis none --no-descriptive \
+      --margin "$MDE_MARGIN" "$@"
+    echo
+  fi
+  if [ -s "$COST2X2_SELECTED_ENV" ]; then
+    # shellcheck disable=SC1090
+    . "$COST2X2_SELECTED_ENV"
+    if [ "${COST2X2_TAG:-a0}" != a0 ]; then
+      echo "## 2x2 with the dev-selected cost-aware ranking ($COST2X2_SPEC, descriptive)"
+      t=$COST2X2_TAG
+      python scripts/analyze.py --rows results/eval/*.jsonl --target "viword_ca$t" --reference "llmlingua2vi_ca$t" \
+        --seed-mode aggregate --seeds $SEEDS --primary-reader "$PRIMARY_READER" --hypothesis none --no-descriptive \
+        --factorial "llmlingua2vi_ca$t" "llmlingua2vi_wordpool_ca$t" "viword_syl_ca$t" "viword_ca$t" "$@"
+      echo
+    fi
+  fi
   echo "## H2 — linguistic protection π"
   # aggregate_seed_rows strips _s0/_s1/_s2, so these base names select the
   # logical viword_pi_s*, viword_s*, and llmlingua2vi_force_s* rows in results/eval.

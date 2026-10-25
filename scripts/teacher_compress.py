@@ -29,7 +29,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
 from viword.data import read_jsonl
-from viword.distill import teacher_compress
+from viword.distill import TEACHER_PROMPTS, teacher_compress
 from viword.heldout import excluded_ids, load_exclusions
 
 
@@ -66,11 +66,15 @@ def api_keys(env=os.environ) -> list[str]:
     return keys or ["EMPTY"]
 
 
-def done_rows(path: str, model: str) -> set[tuple[str, float]]:
-    """(id, ratio) already in `path`; raises SystemExit if any row is not from `model`."""
+def done_rows(path: str, model: str, prompt: str = "default") -> set[tuple[str, float]]:
+    """(id, ratio) already in `path`; raises SystemExit if any row is not from `model` and `prompt`."""
     if not os.path.exists(path):
         return set()
     rows = read_jsonl(path)
+    prompts = sorted({r.get("prompt", "default") for r in rows} - {prompt})
+    if prompts:
+        raise SystemExit(f"{path} has rows made with another teacher prompt ({', '.join(prompts)}), "
+                         f"not only {prompt}: pass a new --output")
     others = sorted({str(r.get("model")) for r in rows if r.get("model") != model})
     if others:
         raise SystemExit(f"{path} has rows from another teacher ({', '.join(others)}; None = no teacher "
@@ -101,13 +105,15 @@ def main():
     ap.add_argument("--exclude", default=None,
                     help="config/test_exclusions.json: skip the test rows readers scored during development "
                          "before --limit, as evaluate.py --exclude does for the teacher upper bound")
+    ap.add_argument("--prompt", default="default", choices=sorted(TEACHER_PROMPTS),
+                    help="teacher instruction; 'neutral' omits the keep-facts/numbers/names/negation line")
     ap.add_argument("--max-tokens", type=int, default=4096,
                     help="output cap per call; a call that reaches it fails instead of keeping a cut-off text")
     args = ap.parse_args()
     if not args.base_url or not args.model:
         ap.error("set TEACHER_URL and TEACHER_MODEL (in .env or the environment) or pass --base-url/--model")
 
-    done = done_rows(args.output, args.model)
+    done = done_rows(args.output, args.model, args.prompt)
     from openai import OpenAI
     # the SDK retries 429 and 5xx itself, with backoff and honouring Retry-After
     clients = [OpenAI(base_url=args.base_url, api_key=key, max_retries=8, timeout=600) for key in api_keys(key_env(dotenv, args.base_url))]
@@ -129,7 +135,7 @@ def main():
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
     with open(args.output, "a", encoding="utf-8") as out, ThreadPoolExecutor(args.workers) as pool:
         futures = {pool.submit(teacher_compress, clients[n % len(clients)], args.model, text, rate,
-                               args.max_tokens): (ids, rate)
+                               args.max_tokens, args.prompt): (ids, rate)
                    for n, (ids, text, rate) in enumerate(jobs)}
         failed = 0
         for future in tqdm(as_completed(futures), total=len(futures)):
@@ -144,6 +150,8 @@ def main():
                 for i in ids:
                     if (i, rate) not in done:
                         row = {"id": i, "ratio": rate, "compressed": compressed, "model": args.model}
+                        if args.prompt != "default":
+                            row["prompt"] = args.prompt
                         out.write(json.dumps(row, ensure_ascii=False) + "\n")
                 out.flush()
     print(f"done; {failed} failed (rerun the same command to retry them)")
