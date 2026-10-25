@@ -55,6 +55,13 @@ class SelectionConfig:
     qrel: float = 0.0  # question-relevance bonus (0 = off; query-aware, descriptive)
 
 
+# The syllable mask of the latest select_units() call and the text it rendered. Every mask-based method
+# (ScoredCompressor and the rule baselines) goes through select_units, so evaluate.py can take the exact mask
+# for its diagnostics instead of re-aligning the text, which misplaces repeated syllables (it gave word-level
+# systems a CBR of 0.5–4% in the 2026-10-25 Kaggle trial). It is used only when the text matches.
+LAST_SELECTION: dict = {}
+
+
 def select_units(words: list[Word], scores: list[float], budget: int, counter: TokenCounter,
                  unit: str = "word", priority: list[int] | None = None, alpha: float = 0.0,
                  cost: str = "tokens", exact: bool = False, fill: bool = True,
@@ -92,7 +99,11 @@ def select_units(words: list[Word], scores: list[float], budget: int, counter: T
             stats["p_unit_cost"] = sum(c for c, k, p in zip(costs, keep, protected) if k and p)
             stats["n_protected_kept"] = sum(1 for k, p in zip(keep, protected) if k and p)
             stats["n_protected"] = sum(protected)
-    return render(words, to_syllable_mask(keep))
+    mask = to_syllable_mask(keep)
+    text = render(words, mask)
+    LAST_SELECTION.clear()
+    LAST_SELECTION.update(text=text, mask=list(mask))
+    return text
 
 
 def unit_costs(words: list[Word], counter: TokenCounter, unit: str = "word", cost: str = "tokens") -> list[int]:

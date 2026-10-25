@@ -343,3 +343,14 @@ def test_remove_word_keeps_the_raw_premise_and_skips_compounds():
     assert remove_word(premise, words, 2) == 'Không quân Mỹ tiết lộ "mục tiêu".'
     first = [W("Không", "R"), W("ai"), W("đến", "V"), W(".", "CH")]
     assert remove_word("Không ai đến.", first, 0) == "Ai đến."
+
+
+def test_row_cbr_uses_the_exact_mask_of_mask_based_methods():
+    from scripts.evaluate import row_cbr
+    from viword.compressor import LAST_SELECTION, select_units
+    words = [W("học sinh"), W("đi"), W("học")]
+    ctx = Context(text="học sinh đi học", doc=[words])
+    out = select_units(words, [0.1, 0.1, 0.9], 4, TokenCounter(CharTokenizer()))
+    assert out == "học" and LAST_SELECTION["text"] == out and LAST_SELECTION["mask"] == [False, False, False, True]
+    exact = row_cbr(ctx, out, mask=LAST_SELECTION["mask"])
+    assert (exact["cbr_partial"], exact["cbr_full"]) == (0, 0)  # the kept "học" is the last word, not "học sinh"

@@ -26,6 +26,7 @@ from viword.data import TASKS, examples_from_rows, load_contexts, read_jsonl, wr
 from viword.heldout import excluded_ids, load_exclusions, refuse_unseen_test_rows
 from viword.eval import (MAX_NEW_TOKENS, APIReader, HFReader, VLLMReader, budget_deviates,
                          build_prompt, context_budget, parse_prediction, score, tokens_per_budget)
+from viword.compressor import LAST_SELECTION
 from viword.methods import build_compressor
 from viword.diagnose import cbr_counts, chance_cbr_counts, recovery_counts, retention_counts, scope_counts
 from viword.segment import align_compressed, flatten
@@ -34,16 +35,18 @@ from viword.select import TokenCounter
 UNCOMPRESSED = {"none", "no_context"}
 
 
-def row_cbr(ctx, compressed: str, mlm=None) -> dict:
+def row_cbr(ctx, compressed: str, mlm=None, mask=None) -> dict:
     """Per-example compound-break counts (DATN §2.2), for the H1 mechanism regression, with
     the expected counts of random syllable deletion at the same keep rate (CBR vs chance),
     retention per protection tier (item g: T1 retention without π) and operator-scope
     retention (item e). With `mlm`, broken words the MLM cannot restore are counted as
-    harmful cuts (RR, DATN §2.2), the regressor that can carry the H1 mechanism."""
+    harmful cuts (RR, DATN §2.2), the regressor that can carry the H1 mechanism. `mask`: the exact syllable
+    mask of a mask-based method; otherwise the mask is recovered by aligning the text."""
     if ctx.doc is None:
         return {}
     words = flatten(ctx.doc)
-    mask, _ = align_compressed(words, compressed)
+    if mask is None or len(mask) != sum(len(w.syllables) for w in words):
+        mask, _ = align_compressed(words, compressed)
     counts = cbr_counts(words, mask)
     partial, full = counts["all", "partial"], counts["all", "full"]
     chance = chance_cbr_counts(words, mask)
@@ -80,7 +83,9 @@ def compress_all(args, examples, contexts) -> list[dict]:
                 if hasattr(compressor, "last_stats"):
                     compressor.last_stats = {}
                 start = time.perf_counter()
+                LAST_SELECTION.clear()
                 compressed = compressor.compress(ctx, budget, counter)
+                exact_mask = LAST_SELECTION.get("mask") if LAST_SELECTION.get("text") == compressed else None
                 compress_ms = 1000 * (time.perf_counter() - start)
                 n_compressed = counter.count(compressed)
                 actual_ratio = tokens_per_budget(n_compressed, budget)
@@ -95,7 +100,8 @@ def compress_all(args, examples, contexts) -> list[dict]:
                              **({"selection": dict(compressor.last_stats)}
                                 if getattr(compressor, "last_stats", None) else {}),
                              **(row_cbr(ctx, compressed,
-                                        mlm if any(compressor.name.startswith(p) for p in rr_methods) else None)
+                                        mlm if any(compressor.name.startswith(p) for p in rr_methods) else None,
+                                        exact_mask)
                                 if compressor.name not in UNCOMPRESSED else {}),
                              "compressed": compressed})
     return rows
