@@ -12,7 +12,8 @@
 # Added after the review of 2026-10-24 (none changes a registered hypothesis or family):
 #   annot_sheets_v2        blind-v2 sheets for P detector v2, a larger probe sheet, a segmentation sheet
 #   select_cost_2x2        one cost-aware ranking rule (α or exact DP) for all four 2x2 cells, on dev
-#   teacher_variants       neutral-prompt / open-teacher labels on VARIANT_PARAGRAPHS paragraphs + small checkpoints
+#   teacher_variants       default/neutral-prompt labels of VARIANT_TEACHER (+ open teacher) on VARIANT_PARAGRAPHS
+#   train_variants         (GPU) one-seed checkpoints on those labels and on the main teacher's, same paragraphs
 #   seg_alt long_ctx minpairs   inputs of the EVAL_EXTRAS descriptive evaluations inside `eval`
 #   gold_cbr               CBR of every system on human word boundaries (after eval)
 #
@@ -119,6 +120,9 @@ COST2X2_SELECTED_ENV=${COST2X2_SELECTED_ENV:-config/cost2x2_selected.env}
 COST2X2_SELECTED_JSON=${COST2X2_SELECTED_JSON:-config/cost2x2_selected.json}
 EVAL_EXTRAS=${EVAL_EXTRAS:-}                  # seg_sensitivity variants long_ctx minpairs (see stage_eval)
 VARIANT_PARAGRAPHS=${VARIANT_PARAGRAPHS:-1000}
+# teacher of the prompt variants (stage_teacher_variants); not the main teacher, which stays TEACHER_URL/TEACHER_MODEL
+VARIANT_TEACHER_URL=${VARIANT_TEACHER_URL:-http://10.9.3.75:31029/v1}
+VARIANT_TEACHER_MODEL=${VARIANT_TEACHER_MODEL:-icmodel/icom-model-llm-ic-v3.5-27b}
 OPEN_TEACHER_URL=${OPEN_TEACHER_URL:-}        # an open-weights teacher (e.g. `vllm serve Qwen/Qwen2.5-32B-Instruct`)
 OPEN_TEACHER_MODEL=${OPEN_TEACHER_MODEL:-}
 LONG_TARGET_SYLLABLES=${LONG_TARGET_SYLLABLES:-2500}
@@ -744,7 +748,8 @@ stage_eval() {
       variants)
         mkdir -p results/variants
         variant_methods=(none)
-        for name in viword_small llmlingua2vi_small viword_neutral viword_open llmlingua2vi_open; do
+        for name in viword_small llmlingua2vi_small viword_v35 llmlingua2vi_v35 viword_neutral viword_open \
+                    llmlingua2vi_open; do
           [ -d "runs/${name}_s0" ] || continue
           unit=$([ "${name#viword}" != "$name" ] && echo word || echo syllable)
           variant_methods+=("scored:model=runs/${name}_s0,unit=$unit,name=${name}_s0")
@@ -820,16 +825,19 @@ stage_minpairs() {  # item 9: candidate minimal pairs from dev/train premises, f
   echo "  python scripts/segment_data.py --input data/tasks/vinli_minpairs.jsonl --field premise --output data/segmented/vinli_minpairs.jsonl" >&2
 }
 
-stage_teacher_variants() {  # items g and 11: neutral prompt and open teacher on VARIANT_PARAGRAPHS paragraphs
+stage_teacher_variants() {  # items g and 11, owner side (teacher API, CPU): labels of the teacher variants
+  # The neutral prompt is compared with the default prompt of the SAME teacher, so the prompt effect is not mixed
+  # with a teacher change. VARIANT_TEACHER (iCOMM v3.5, 2026-10-25) is not the pipeline's main teacher: it
+  # compresses less than v3.8 (trial on 100 paragraphs: median output 0.65/0.35 of the input at targets 0.5/0.25,
+  # syllable-label κ 0.44 vs v3.8), so its default-prompt labels also serve as the second teacher of item 11.
   require_segmented
-  variants=(neutral)
-  [ -n "$OPEN_TEACHER_MODEL" ] && variants+=(open)
-  for variant in "${variants[@]}"; do
-    if [ "$variant" = neutral ]; then
-      url=$TEACHER_URL model=$TEACHER_MODEL prompt=neutral
-    else
-      url=${OPEN_TEACHER_URL:?set OPEN_TEACHER_URL for the open teacher} model=$OPEN_TEACHER_MODEL prompt=default
-    fi
+  variants=("v35_default:$VARIANT_TEACHER_URL:$VARIANT_TEACHER_MODEL:default"
+            "v35_neutral:$VARIANT_TEACHER_URL:$VARIANT_TEACHER_MODEL:neutral")
+  [ -n "$OPEN_TEACHER_MODEL" ] && variants+=("open:${OPEN_TEACHER_URL:?set OPEN_TEACHER_URL}:$OPEN_TEACHER_MODEL:default")
+  for spec in "${variants[@]}"; do
+    # the URL contains ":", so split from both ends
+    variant=${spec%%:*} prompt=${spec##*:} rest=${spec#*:}
+    rest=${rest%:*} model=${rest##*:} url=${rest%:*}
     log "teacher variant $variant ($model, prompt $prompt) on $VARIANT_PARAGRAPHS paragraphs"
     python scripts/teacher_compress.py --input data/distill/paragraphs_clean.jsonl --field text \
       --limit "$VARIANT_PARAGRAPHS" --rates 0.5 0.25 --prompt "$prompt" \
@@ -838,14 +846,27 @@ stage_teacher_variants() {  # items g and 11: neutral prompt and open teacher on
     python scripts/distill.py --paragraphs data/distill/paragraphs_clean.jsonl \
       --segmented data/segmented/paragraphs_clean.jsonl --teacher "data/distill/teacher_$variant.jsonl" \
       --output "data/distill/distilled_$variant.jsonl" | tee "data/distill/distill_summary_$variant.json"
-    python scripts/teacher_agreement.py --a data/distill/distilled.jsonl --b "data/distill/distilled_$variant.jsonl" \
-      --out "results/teacher_agreement_$variant.md"
   done
-  # matched checkpoints: the main teacher on the same paragraphs, then each variant (one seed, descriptive)
-  small_args=(--ids-from data/distill/distilled_neutral.jsonl --dev-paragraphs "${VARIANT_DEV_PARAGRAPHS:-100}" --seed 0)
-  python scripts/train.py --distilled data/distill/distilled.jsonl --label-unit word --out runs/viword_small_s0 "${small_args[@]}"
-  python scripts/train.py --distilled data/distill/distilled.jsonl --label-unit syllable --out runs/llmlingua2vi_small_s0 "${small_args[@]}"
-  python scripts/train.py --distilled data/distill/distilled_neutral.jsonl --label-unit word --out runs/viword_neutral_s0 "${small_args[@]}"
+  mkdir -p results/teacher_variants
+  # item g: prompt effect within one teacher; item 11: teacher effect (main teacher vs the variant teacher)
+  python scripts/teacher_agreement.py --a data/distill/distilled_v35_default.jsonl \
+    --b data/distill/distilled_v35_neutral.jsonl --out results/teacher_variants/v35_default_vs_neutral.md
+  python scripts/teacher_agreement.py --a data/distill/distilled.jsonl --b data/distill/distilled_v35_default.jsonl \
+    --out results/teacher_variants/main_vs_v35_default.md
+  if [ -n "$OPEN_TEACHER_MODEL" ]; then
+    python scripts/teacher_agreement.py --a data/distill/distilled.jsonl --b data/distill/distilled_open.jsonl \
+      --out results/teacher_variants/main_vs_open.md
+  fi
+}
+
+stage_train_variants() {  # GPU: one-seed descriptive checkpoints on the same VARIANT_PARAGRAPHS paragraphs
+  small_args=(--ids-from data/distill/distilled_v35_neutral.jsonl --dev-paragraphs "${VARIANT_DEV_PARAGRAPHS:-100}" --seed 0)
+  for spec in "distilled:small" "distilled_v35_default:v35" "distilled_v35_neutral:neutral"; do
+    IFS=: read -r labels tag <<< "$spec"
+    python scripts/train.py --distilled "data/distill/$labels.jsonl" --label-unit word --out "runs/viword_${tag}_s0" "${small_args[@]}"
+    [ "$tag" = neutral ] || python scripts/train.py --distilled "data/distill/$labels.jsonl" --label-unit syllable \
+      --out "runs/llmlingua2vi_${tag}_s0" "${small_args[@]}"
+  done
   if [ -n "$OPEN_TEACHER_MODEL" ]; then
     python scripts/train.py --distilled data/distill/distilled_open.jsonl --label-unit word --out runs/viword_open_s0 "${small_args[@]}"
     python scripts/train.py --distilled data/distill/distilled_open.jsonl --label-unit syllable --out runs/llmlingua2vi_open_s0 "${small_args[@]}"
