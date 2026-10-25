@@ -106,7 +106,7 @@ def load_contexts(examples: list[Example], segmented_path: str):
         raise KeyError(f"{len(missing)} examples are not segmented, e.g. {missing[:3]}")
     return [Context(text=normalize(ex.context), doc=doc_from_json(docs[ex.id]),
                     question=ex.question or None, text_en=ex.extra.get("context_en", ""),
-                    example_id=ex.id) for ex in examples]
+                    example_id=ex.id, choices=tuple(ex.choices)) for ex in examples]
 
 
 def belebele_from_hub(out_path: str) -> None:

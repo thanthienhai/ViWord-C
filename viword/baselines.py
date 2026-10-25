@@ -146,6 +146,23 @@ class TfidfSentences:
         return _select_sentences(context, scores, budget, counter)
 
 
+class QuestionSentences:
+    """Query-aware sentence extraction: sentences ranked by their coverage of the question's
+    content syllables (with `choices`, of the mc options too), earlier sentences first on ties.
+    The lexical control of `qrel_unit=sentence`: question awareness without a learned scorer."""
+
+    def __init__(self, choices: bool = False):
+        self.choices = choices
+        self.name = "qsent_choices" if choices else "qsent"
+
+    def compress(self, context, budget, counter):
+        from .compressor import query_text, sentence_coverage
+
+        coverage = sentence_coverage(context.doc, query_text(context, self.choices))
+        n = len(coverage)
+        return _select_sentences(context, [c - i / (1e3 * n) for i, c in enumerate(coverage)], budget, counter)
+
+
 def lm_dtype(torch, device: str):
     """Load dtype of the causal LMs (bf16 checkpoints): their own dtype ("auto"), except fp16
     on GPUs without native bf16 (compute capability < 8, e.g. T4), where bf16 is emulated."""

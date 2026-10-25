@@ -17,7 +17,11 @@ Two optional score terms are off by default (so every registered arm is unchange
 `protect.scope_heads`) when the operator is in the protected tiers, so that "không" is
 not kept while "được phép" is dropped; `qrel` adds a question–word relevance bonus
 (share of the word's content syllables that occur in the question), a descriptive,
-query-aware variant toward RAG. Neither is part of H1 or H2.
+query-aware variant toward RAG. With `qrel_unit="sentence"` every word gets instead the
+share of the question's content syllables that its sentence covers, so whole relevant
+sentences rise (on long contexts the word bonus alone mostly keeps the question's own
+words); `qrel_choices` adds the multiple-choice options to the question. None of these
+is part of H1 or H2.
 """
 from __future__ import annotations
 
@@ -40,6 +44,7 @@ class Context:
     text_en: str = ""  # parallel English context (Belebele), for translate-then-compress
     example_id: str = ""  # used by methods that read precomputed compressions
     ratio: float = 1.0
+    choices: tuple[str, ...] = ()  # mc options, for query-aware methods that read them (qrel_choices)
 
 
 @dataclass
@@ -53,6 +58,8 @@ class SelectionConfig:
     exact: bool = False  # exact DP knapsack instead of greedy (cost-aware ranking, item d)
     scope: float = 0.0  # bonus to the head word of a protected operator (0 = off)
     qrel: float = 0.0  # question-relevance bonus (0 = off; query-aware, descriptive)
+    qrel_unit: str = "word"  # "word" or "sentence" (each word gets its sentence's coverage of the question)
+    qrel_choices: bool = False  # the question plus the mc options as the query
 
 
 # The syllable mask of the latest select_units() call and the text it rendered. Every mask-based method
@@ -115,19 +122,42 @@ def unit_costs(words: list[Word], counter: TokenCounter, unit: str = "word", cos
     return [len(text.split(" ")) for text, _ in units]
 
 
-def question_relevance(words: list[Word], question: str) -> list[float]:
-    """Share of a word's content syllables (not stopwords, not punctuation) found in the question."""
+def query_text(context: Context, choices: bool = False) -> str:
+    """The question, plus the mc options if `choices`."""
+    return " ".join([context.question or "", *(context.choices if choices else ())])
+
+
+def _asked(question: str) -> tuple[set[str], set[str]]:
     import re
 
     from .baselines import load_stopwords
 
     stop = load_stopwords()
-    asked = {s for s in re.findall(r"\w+", question.lower()) if s not in stop}
+    return {s for s in re.findall(r"\w+", question.lower()) if s not in stop}, stop
+
+
+def question_relevance(words: list[Word], question: str) -> list[float]:
+    """Share of a word's content syllables (not stopwords, not punctuation) found in the question."""
+    asked, stop = _asked(question)
     out = []
     for w in words:
         content = [s.lower() for s in w.syllables if not w.is_punct and s.lower() not in stop]
         out.append(sum(s in asked for s in content) / len(content) if content else 0.0)
     return out
+
+
+def sentence_coverage(doc: Document, question: str) -> list[float]:
+    """For each sentence, the share of the question's distinct content syllables it contains."""
+    asked, _ = _asked(question)
+    if not asked:
+        return [0.0] * len(doc)
+    return [len(asked & {s.lower() for w in sentence if not w.is_punct for s in w.syllables}) / len(asked)
+            for sentence in doc]
+
+
+def sentence_relevance(doc: Document, question: str) -> list[float]:
+    """`sentence_coverage` of each word's sentence, per word in `flatten(doc)` order."""
+    return [c for sentence, c in zip(doc, sentence_coverage(doc, question)) for _ in sentence]
 
 
 def sigmoid(x: np.ndarray) -> np.ndarray:
@@ -168,7 +198,10 @@ class ScoredCompressor:
                 if flags[op]:
                     word_bonus[head] += cfg.scope
         if cfg.qrel and context.question:
-            word_bonus = [b + cfg.qrel * r for b, r in zip(word_bonus, question_relevance(words, context.question))]
+            query = query_text(context, cfg.qrel_choices)
+            relevance = (sentence_relevance(context.doc, query) if cfg.qrel_unit == "sentence"
+                         else question_relevance(words, query))
+            word_bonus = [b + cfg.qrel * r for b, r in zip(word_bonus, relevance)]
         if any(word_bonus):
             bonus = word_bonus if cfg.unit == "word" else [b for w, b in zip(words, word_bonus) for _ in w.syllables]
             scores = [s + b for s, b in zip(scores, bonus)]

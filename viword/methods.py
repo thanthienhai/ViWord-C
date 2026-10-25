@@ -13,6 +13,9 @@ Spec syntax: `name` or `name:key=value,key=value`. Examples:
   scored:model=runs/viword_s0,unit=word,exact=1,name=...     (exact DP knapsack)
   scored:model=runs/viword_s0,unit=word,protect=soft,scope=0.2,name=...  (operator scope)
   scored:model=runs/viword_s0,unit=word,qrel=0.3,name=...    (question relevance)
+  scored:model=runs/viword_s0,unit=word,qrel=1,qrel_unit=sentence,qrel_choices=1,name=...
+                                                             (sentence coverage of question + options)
+  qsent | qsent:choices=1                    (sentences by question coverage; lexical control of qrel)
   lexprior:train=data/distill/distilled.jsonl,exclude=runs/viword_s0/dev_ids.jsonl
   precomputed:path=results/teacher_dev/vinli_dev.jsonl,trim=1,name=teacher
 
@@ -74,6 +77,8 @@ def build_compressor(spec: str, cache: dict | None = None):
         return simple[name]()
     if name == "random":
         return B.RandomWords(int(a.get("seed", 0)))
+    if name == "qsent":
+        return B.QuestionSentences(choices=a.get("choices", "0") == "1")
     if name == "ppl_sent":
         return B.PerplexitySentences(lm(a.get("lm", "Qwen/Qwen2.5-1.5B")))
     if name == "selective_context":
@@ -115,6 +120,8 @@ def build_compressor(spec: str, cache: dict | None = None):
             exact=a.get("exact", "0") == "1",
             scope=float(a.get("scope", 0.0)),
             qrel=float(a.get("qrel", 0.0)),
+            qrel_unit=a.get("qrel_unit", "word"),
+            qrel_choices=a.get("qrel_choices", "0") == "1",
         )
         return ScoredCompressor(scorer, config, a.get("name", spec))
     raise ValueError(f"unknown method spec: {spec}")

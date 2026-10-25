@@ -139,6 +139,33 @@ def test_question_relevance_bonus():
     assert scores[0] > scores[1] == scores[2]
 
 
+def test_sentence_level_question_relevance_and_options():
+    from viword.compressor import sentence_coverage
+    doc = [[W("Trời"), W("mưa"), W(".", "CH")], [W("Hà Nội"), W("có"), W("hồ"), W("đẹp"), W(".", "CH")]]
+    assert sentence_coverage(doc, "Hồ ở Hà Nội thế nào?") == [0.0, 0.75]  # hồ, hà, nội of {hồ, hà, nội, nào}
+    cfg = SelectionConfig(unit="word", qrel=0.5, qrel_unit="sentence")
+    comp = ScoredCompressor(FixedScorer([0.0] * 9), cfg, "x")
+    _, scores, _, _ = comp.unit_scores(Context(text="", doc=doc, question="Hồ ở Hà Nội thế nào?"))
+    assert scores[3] == scores[5] > scores[0]  # every word of the covering sentence rises, not only the asked ones
+    # the options join the query only with qrel_choices
+    ctx = Context(text="", doc=doc, question="Câu nào đúng?", choices=("trời mưa", "nắng"))
+    plain = ScoredCompressor(FixedScorer([0.0] * 9), cfg, "x").unit_scores(ctx)[1]
+    with_options = ScoredCompressor(FixedScorer([0.0] * 9), SelectionConfig(
+        unit="word", qrel=0.5, qrel_unit="sentence", qrel_choices=True), "x").unit_scores(ctx)[1]
+    assert plain[0] == plain[3] and with_options[0] > with_options[3]
+
+
+def test_question_sentences_baseline_keeps_the_covering_sentence():
+    from viword.methods import build_compressor
+    doc = [[W("Trời"), W("mưa"), W("to"), W(".", "CH")], [W("Hà Nội"), W("có"), W("hồ"), W(".", "CH")]]
+    counter = TokenCounter(CharTokenizer())
+    ctx = Context(text="Trời mưa to . Hà Nội có hồ .", doc=doc, question="Hà Nội có gì?")
+    comp = build_compressor("qsent")
+    assert comp.name == "qsent" and build_compressor("qsent:choices=1").name == "qsent_choices"
+    out = comp.compress(ctx, counter.count("Hà Nội có hồ.") + 1, counter)  # room for one sentence
+    assert "Hà Nội" in out and "mưa" not in out
+
+
 # ---------------------------------------------------------------------------- item 5: detector v2
 
 def test_detector_v2_catches_untagged_names_and_skips_article_mot():
