@@ -189,7 +189,18 @@ class HFReader:
         self.name = model
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.tokenizer = AutoTokenizer.from_pretrained(model)
-        self.model = AutoModelForCausalLM.from_pretrained(model, torch_dtype="auto").to(self.device).eval()
+        # VIWORD_HF_QUANT=int8 loads the weights in 8 bit with bitsandbytes (quick tests on a small GPU,
+        # e.g. Qwen2.5-1.5B/3B-Instruct on a 6 GB card); greedy outputs can differ slightly from fp16
+        quant = os.environ.get("VIWORD_HF_QUANT", "").lower()
+        if quant not in {"", "int8"}:
+            raise ValueError(f"VIWORD_HF_QUANT must be empty or int8, got {quant!r}")
+        if quant == "int8" and self.device == "cuda":
+            from transformers import BitsAndBytesConfig
+
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model, quantization_config=BitsAndBytesConfig(load_in_8bit=True), device_map={"": 0}).eval()
+        else:
+            self.model = AutoModelForCausalLM.from_pretrained(model, torch_dtype="auto").to(self.device).eval()
 
     def generate(self, prompts: list[str], max_new_tokens: int) -> list[str]:
         outputs = []
@@ -247,6 +258,11 @@ class VLLMReader:
         kwargs.setdefault("tensor_parallel_size", int(os.environ.get("VIWORD_VLLM_TP", 1)))
         # every prompt of a task shares the instruction prefix (and, across methods, the question)
         kwargs.setdefault("enable_prefix_caching", True)
+        # Quick tests with an 8-bit reader: a pre-quantized checkpoint such as Qwen/Qwen2.5-1.5B-Instruct-GPTQ-Int8
+        # (same tokenizer as Qwen2.5-7B, so budgets are unchanged) is detected from its config. On a T4 (no Marlin
+        # kernels) set VIWORD_VLLM_QUANT=gptq and VIWORD_VLLM_DTYPE=half. Not for the registered runs.
+        if os.environ.get("VIWORD_VLLM_QUANT"):
+            kwargs.setdefault("quantization", os.environ["VIWORD_VLLM_QUANT"])
         self.name = model
         self.llm = LLM(model=model, max_model_len=max_model_len, **kwargs)
         self.tokenizer = self.llm.get_tokenizer()
