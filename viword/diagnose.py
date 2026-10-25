@@ -9,7 +9,7 @@ from collections import Counter
 
 import numpy as np
 
-from .protect import TIERS, is_negation, protection_tiers, scope_heads
+from .protect import NEG, TIERS, is_negation, is_operator, protection_tiers, scope_heads
 from .segment import Word, normalize, syllables_of
 
 # ---------------------------------------------------------------------------- compressor families
@@ -249,14 +249,18 @@ def recovery_counts(words: list[Word], syllable_mask: list[bool], mlm, max_words
 # ---------------------------------------------------------------------------- P2: function words
 
 def retention_counts(words: list[Word], syllable_mask: list[bool]) -> Counter:
-    """(group, "kept"/"total") counts for all non-punctuation words and for each
-    protection tier. A word counts as kept if any of its syllables is kept."""
+    """(group, "kept"/"total") counts for all non-punctuation words, for each protection
+    tier, and for the polarity/condition operators ("NEG"). A word counts as kept if any of
+    its syllables is kept."""
     counts, i = Counter(), 0
-    for w, tier in zip(words, protection_tiers(words)):
+    for wi, (w, tier) in enumerate(zip(words, protection_tiers(words))):
         n = len(w.syllables)
         kept = any(syllable_mask[i:i + n])
         i += n
-        for group in (["all"] if not w.is_punct else []) + ([tier] if tier else []):
+        groups = (["all"] if not w.is_punct else []) + ([tier] if tier else [])
+        if is_operator(words, wi):
+            groups.append(NEG)
+        for group in groups:
             counts[group, "total"] += 1
             counts[group, "kept"] += kept
     return counts

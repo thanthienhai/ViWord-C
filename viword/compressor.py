@@ -26,7 +26,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .model import pool_to_words
-from .protect import (force_syllable_mask, naive_syllable_protection, protection_tiers,
+from .protect import (force_syllable_mask, naive_syllable_protection, protected_flags,
                       scope_heads, string_force_syllable_mask)
 from .segment import Document, Word, expand_word_mask, flatten, render, syllables_of
 from .select import TokenCounter, exact_select, greedy_select, trim_to_budget
@@ -150,7 +150,7 @@ class ScoredCompressor:
 
         if cfg.unit == "word":
             scores = sigmoid(pool_to_words(logits, words))
-            protected = [t in cfg.tiers for t in protection_tiers(words)]
+            protected = protected_flags(words, cfg.tiers)
         else:
             scores = sigmoid(logits)
             if cfg.protect == "force":
@@ -163,9 +163,9 @@ class ScoredCompressor:
         scores, priority = list(scores), None
         word_bonus = [0.0] * len(words)
         if cfg.scope:
-            tiers = protection_tiers(words)
+            flags = protected_flags(words, cfg.tiers)
             for op, head in scope_heads(words):
-                if tiers[op] in cfg.tiers:
+                if flags[op]:
                     word_bonus[head] += cfg.scope
         if cfg.qrel and context.question:
             word_bonus = [b + cfg.qrel * r for b, r in zip(word_bonus, question_relevance(words, context.question))]

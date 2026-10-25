@@ -56,7 +56,7 @@ def row_cbr(ctx, compressed: str, mlm=None, mask=None) -> dict:
            "cbr": partial / (partial + full) if partial + full else None,
            "cbr_chance_partial": round(chance["partial"], 4), "cbr_chance_survived": round(chance["survived"], 4),
            "tier_kept": {g: [retention[g, "kept"], retention[g, "total"]]
-                         for g in ("all", "T1", "T2", "T3") if retention[g, "total"]},
+                         for g in ("all", "T1", "T2", "T3", "NEG") if retention[g, "total"]},
            "scope_ops_kept": scope["ops_kept"], "scope_heads_kept": scope["ops_kept_with_head"]}
     if mlm is not None and partial:
         recovered, checked = recovery_counts(words, mask, mlm)

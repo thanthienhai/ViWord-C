@@ -151,6 +151,28 @@ def protection_tiers(words: list[Word]) -> list[str | None]:
     return [protection_tier(words, i) for i in range(len(words))]
 
 
+# π_NEG (candidate amendment of 2026-10-25): protect the lexical polarity and condition operators alone, as the
+# pseudo-tier "NEG" (tiers=NEG). In the distilled labels, names and numbers are ~94% of T1 occurrences and are kept
+# more often than average already, while the teacher keeps negations barely above the average word (0.55 vs 0.39 at
+# rate 0.5; 0.25 vs 0.19 at 0.25) and conditionals below it, so protecting T1 mostly spends budget on names.
+NEG = "NEG"
+
+
+def is_operator(words: list[Word], i: int) -> bool:
+    """A real negation (`is_negation`, disambiguated) or a conditional/concessive word."""
+    text = words[i].text.lower()
+    if text in NEGATION:
+        return is_negation(words, i)
+    return text in CONDITIONAL
+
+
+def protected_flags(words: list[Word], tiers: tuple[str, ...]) -> list[bool]:
+    """Word i is protected if its tier is in `tiers`, or if "NEG" is in `tiers` and it is an operator."""
+    wanted = set(tiers)
+    neg = NEG in wanted
+    return [t in wanted or (neg and is_operator(words, i)) for i, t in enumerate(protection_tiers(words))]
+
+
 SCOPE_WINDOW = 4  # the head is looked for among the next few words of the clause
 
 
@@ -186,18 +208,16 @@ def force_tokens_for_context(words: list[Word], tiers: tuple[str, ...] = TIERS) 
     :func:`protection_tiers`.  Duplicate surface forms are passed once because
     LLMLingua forces all occurrences of a token string.
     """
-    wanted = set(tiers)
     result = []
-    for word, tier in zip(words, protection_tiers(words)):
-        if tier in wanted and word.text not in result:
+    for word, flag in zip(words, protected_flags(words, tiers)):
+        if flag and word.text not in result:
             result.append(word.text)
     return result
 
 
 def force_syllable_mask(words: list[Word], tiers: tuple[str, ...] = TIERS) -> list[bool]:
     """Expand the contextual P list to a hard mask over the word's syllables."""
-    wanted = set(tiers)
-    return [tier in wanted for word, tier in zip(words, protection_tiers(words)) for _ in word.syllables]
+    return [flag for word, flag in zip(words, protected_flags(words, tiers)) for _ in word.syllables]
 
 
 def string_force_syllable_mask(words: list[Word], tiers: tuple[str, ...] = TIERS) -> list[bool]:
@@ -207,8 +227,10 @@ def string_force_syllable_mask(words: list[Word], tiers: tuple[str, ...] = TIERS
     POS/context disambiguation and no NER, so "không" in "không khí" is forced too —
     exactly the behaviour ViWord-C's word-level, disambiguated π is compared against."""
     wanted = set(tiers)
-    phrases = sorted({tuple(w.split(" ")) for w, t in TIER_OF_WORD.items() if t in wanted},
-                     key=len, reverse=True)
+    strings = {w for w, t in TIER_OF_WORD.items() if t in wanted}
+    if NEG in wanted:  # the operator strings, matched without disambiguation (force_tokens semantics)
+        strings |= NEGATION | CONDITIONAL
+    phrases = sorted({tuple(w.split(" ")) for w in strings}, key=len, reverse=True)
     sylls = [s.lower() for w in words for s in w.syllables]
     mask = [False] * len(sylls)
     for phrase in phrases:
@@ -222,7 +244,7 @@ def string_force_syllable_mask(words: list[Word], tiers: tuple[str, ...] = TIERS
 
 
 def protected_mask(words: list[Word], tiers: tuple[str, ...] = TIERS) -> list[bool]:
-    return [t in tiers for t in protection_tiers(words)]
+    return protected_flags(words, tiers)
 
 
 def naive_syllable_protection(syllable: str) -> bool:

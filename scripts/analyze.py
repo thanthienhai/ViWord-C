@@ -290,12 +290,12 @@ def print_descriptive_tables(systems: dict) -> None:
         print("\n## Retention by protection tier and operator scope\n")
         print("Word kept if any syllable is kept. Scope = kept T1/T2 operators whose head (next verb/adjective) "
               "is kept too. For the systems without π this is what the encoder learned from the teacher alone.\n")
-        print("| task | reader | method | ratio | all | T1 | T2 | T3 | scope (kept ops) |")
-        print("|---|---|---|---|---|---|---|---|---|")
+        print("| task | reader | method | ratio | all | T1 | T2 | T3 | NEG (negation, condition) | scope (kept ops) |")
+        print("|---|---|---|---|---|---|---|---|---|---|")
         for key in keyed:
             group = [r for r in systems[key] if "tier_kept" in r]
             cells = []
-            for tier in ("all", "T1", "T2", "T3"):
+            for tier in ("all", "T1", "T2", "T3", "NEG"):
                 kept = sum(r["tier_kept"].get(tier, [0, 0])[0] for r in group)
                 total = sum(r["tier_kept"].get(tier, [0, 0])[1] for r in group)
                 cells.append(f"{_share(kept, total):.3f}" if total else "-")

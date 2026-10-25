@@ -354,3 +354,25 @@ def test_row_cbr_uses_the_exact_mask_of_mask_based_methods():
     assert out == "học" and LAST_SELECTION["text"] == out and LAST_SELECTION["mask"] == [False, False, False, True]
     exact = row_cbr(ctx, out, mask=LAST_SELECTION["mask"])
     assert (exact["cbr_partial"], exact["cbr_full"]) == (0, 0)  # the kept "học" is the last word, not "học sinh"
+
+
+def test_neg_tier_protects_only_real_operators():
+    from viword.protect import protected_flags, string_force_syllable_mask
+    words = [W("Nếu", "C"), W("Minh", "Np"), W("không", "R"), W("đến", "V"), W("không khí", "N"), W("3", "M"),
+             W("có", "V"), W("đẹp", "A"), W("không", "R"), W("?", "CH")]
+    assert protected_flags(words, ("NEG",)) == [True, False, True, False, False, False, False, False, False, False]
+    t1 = protected_flags(words, ("T1",))
+    assert t1[1] and t1[5] and t1[2]  # T1 also holds the name and the number
+    # force semantics: plain string match, so the question particle and "không khí" are forced too
+    forced = string_force_syllable_mask(words, ("NEG",))
+    assert forced[2] and forced[4] and forced[-2] and not forced[6]
+    comp = ScoredCompressor(FixedScorer([0.0] * 11), SelectionConfig(unit="word", protect="hard", tiers=("NEG",)), "x")
+    _, _, priority, _ = comp.unit_scores(Context(text="", doc=[words]))
+    assert priority == [1, 0, 1, 0, 0, 0, 0, 0, 0, 0]
+
+
+def test_retention_counts_report_operators():
+    from viword.diagnose import retention_counts
+    words = [W("không", "R"), W("đi", "V"), W("nếu", "C"), W("mưa", "V")]
+    counts = retention_counts(words, [False, True, True, True])
+    assert counts["NEG", "total"] == 2 and counts["NEG", "kept"] == 1
