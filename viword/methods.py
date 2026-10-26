@@ -5,7 +5,7 @@ Spec syntax: `name` or `name:key=value,key=value`. Examples:
   none | no_context | lead | truncation | stopword | lexical | tfidf_sent | probe_negation
   random:seed=1
   ppl_sent:lm=Qwen/Qwen2.5-1.5B            selective_context:lm=Qwen/Qwen2.5-1.5B
-  llmlingua2 | llmlingua2_force | llmlingua:lm=Qwen/Qwen2.5-1.5B | longllmlingua:lm=...
+  llmlingua2 | llmlingua2_force | llmlingua:lm=Qwen/Qwen2.5-1.5B | longllmlingua:lm=...[,units=1]
   translate:inner=llmlingua2                (Belebele only: compress the English passage)
   scored:model=runs/viword_s0,unit=word,protect=soft,delta=0.2,alpha=0,name=viword
   scored:model=runs/llmlingua2vi_s0,unit=syllable,protect=force,tiers=T1+T2,name=...
@@ -17,6 +17,10 @@ Spec syntax: `name` or `name:key=value,key=value`. Examples:
                                                              (sentence coverage of question + options)
   qsent | qsent:choices=1                    (sentences by question coverage; lexical control of qrel)
   qunit                                      (legal RAG: units of the context by BM25 against the question)
+  unitsel:scorer=runs/unit_utility_s0,fine=microsoft/llmlingua-2-xlm-roberta-large-meetingbank,unit=syllable,
+          qrel=5,lam=0,name=...              (legal RAG, direction B's compressor, viword.unitsel: units by a
+                                              scorer path, BAAI/bge-reranker-v2-m3 or bm25; fine=none keeps heads;
+                                              level=sentence selects sentences instead of clauses, H2)
   scored:model=runs/viword_s0,unit=word,ids=1,name=...       (legal RAG: unit identifiers kept first)
   lexprior:train=data/distill/distilled.jsonl,exclude=runs/viword_s0/dev_ids.jsonl
   precomputed:path=results/teacher_dev/vinli_dev.jsonl,trim=1,name=teacher
@@ -83,6 +87,23 @@ def build_compressor(spec: str, cache: dict | None = None):
         return B.QuestionSentences(choices=a.get("choices", "0") == "1")
     if name == "qunit":
         return B.QuestionUnits()
+    if name == "unitsel":
+        from .unit_scorer import BM25UnitScorer, CrossEncoderUnitScorer
+        from .unitsel import UnitSelectCompressor
+        key = ("unit_scorer", a["scorer"])
+        if key not in cache:
+            cache[key] = BM25UnitScorer() if a["scorer"] == "bm25" else CrossEncoderUnitScorer(a["scorer"])
+        fine = None
+        if a.get("fine", "none") != "none":
+            from .model import SyllableScorer
+            fkey = ("scorer", a["fine"])
+            if fkey not in cache:
+                cache[fkey] = SyllableScorer(a["fine"])
+            fine = ScoredCompressor(cache[fkey], SelectionConfig(unit=a.get("unit", "word"),
+                                                                 qrel=float(a.get("qrel", 0.0)),
+                                                                 qrel_unit="sentence"), "fine")
+        return UnitSelectCompressor(cache[key], fine, lam=float(a.get("lam", 0.0)), name=a.get("name", spec),
+                                    level=a.get("level", "unit"))
     if name == "ppl_sent":
         return B.PerplexitySentences(lm(a.get("lm", "Qwen/Qwen2.5-1.5B")))
     if name == "selective_context":
@@ -92,7 +113,7 @@ def build_compressor(spec: str, cache: dict | None = None):
     if name == "llmlingua2_force":
         return B.LLMLinguaOfficial("llmlingua2", force_from_context=True)
     if name in {"llmlingua", "longllmlingua"}:
-        return B.LLMLinguaOfficial(name, lm_name=a.get("lm", "Qwen/Qwen2.5-1.5B"))
+        return B.LLMLinguaOfficial(name, lm_name=a.get("lm", "Qwen/Qwen2.5-1.5B"), units=a.get("units", "0") == "1")
     if name == "translate":
         return TranslateThenCompress(build_compressor(a.get("inner", "llmlingua2"), cache))
     if name == "precomputed":

@@ -423,17 +423,18 @@ class LLMLinguaOfficial:
 
     ``force_from_context`` is the package-level control: it builds the exact
     contextual P list from VnCoreNLP words for every example, including phrases,
-    numbers and NER spans.
+    numbers and NER spans. ``units`` (LongLLMLingua only) passes the blank-line units of a legal
+    RAG context as separate documents, so that its coarse step ranks clauses (direction B).
     """
 
     LLMLINGUA2 = "microsoft/llmlingua-2-xlm-roberta-large-meetingbank"
 
     def __init__(self, version: str = "llmlingua2", lm_name: str = "Qwen/Qwen2.5-1.5B",
                  force_tokens: list[str] | None = None, force_from_context: bool = False,
-                 force_tiers: tuple[str, ...] = TIERS, device: str = "cuda"):
+                 force_tiers: tuple[str, ...] = TIERS, device: str = "cuda", units: bool = False):
         from llmlingua import PromptCompressor
 
-        self.version = version
+        self.version, self.units = version, units
         self.force_tokens = force_tokens or []
         self.force_from_context = force_from_context
         self.force_tiers = force_tiers
@@ -460,7 +461,8 @@ class LLMLinguaOfficial:
             out = self.pc.compress_prompt(context.text, rate=rate, force_tokens=force_tokens,
                                           force_reserve_digit=bool(force_tokens))
         elif self.version == "longllmlingua":
-            out = self.pc.compress_prompt([context.text], question=context.question or "", rate=rate,
+            docs = context.text.split("\n\n") if self.units else [context.text]
+            out = self.pc.compress_prompt(docs, question=context.question or "", rate=rate,
                                           condition_in_question="after_condition",
                                           rank_method="longllmlingua", condition_compare=True)
         else:

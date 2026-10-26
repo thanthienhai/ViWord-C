@@ -220,3 +220,18 @@ xếp một Khoản vàng lên đầu ở 75% câu và đưa vào top-10 ở 99%
 
 Chế độ `gold` của VLegal không dùng cho ViBidLQA: Khoản vàng đã được truy xuất thì giữ nguyên thứ hạng, nên vẫn
 đứng đầu ở 76% câu và lead thắng chỉ nhờ vị trí.
+
+**Phần train (nhãn cho scorer).** `python scripts/make_vibid_tasks.py --split train` ghép 3.654 câu do LLM sinh của
+file train (212 Điều): file này đánh số Điều của Nghị định lệch so với 24/2024 (thường +1), nên đoạn văn được so với
+các Điều trong khoảng ±2 ở ngưỡng phủ 80%, và đáp án vẫn phải nằm trong một Khoản. Bỏ 50 câu trùng hệt câu dev/test;
+1.776 câu rơi vào Điều vàng của dev/test (ViBidLQA thiết kế train và test chung Điều, câu hỏi khác nhau) và được
+đánh dấu `heldout_article` để có thể huấn luyện không thấy các Điều đó. Ngữ cảnh: `legal_rag.py contexts --split
+train --mode random` (12,8 Khoản, có Khoản vàng). Nhãn hữu ích: `scripts/vibid_labels.py` (mức tăng log p của đáp án
+khi chỉ có một Khoản, so với không ngữ cảnh) ghi ra `data/labels/vibid_train_utility.jsonl`.
+
+**Ngữ cảnh test** (`vibid_rag{,_random,_oracle}_test.jsonl`, đã tách từ) được dựng sẵn cho lượt test duy nhất; reader
+chỉ được đọc chúng ở giai đoạn test (`viword.heldout`).
+
+**Đóng gói cho máy GPU.** `data/SHA256SUMS_B` liệt kê 22 file của hướng B (148 MB): tác vụ dev/test/train, các
+ngữ cảnh và bản tách từ. Đẩy: `python scripts/hf_data.py push --repo thanthienhai/viword-c-legal-data --sums
+data/SHA256SUMS_B`; máy GPU kéo về bằng `scripts/b_h100.sh data` (`docs/RUN_B_H100.md`).

@@ -1,0 +1,22 @@
+{
+  "_comment": "Format of config/b_registration.json (gate G2 of direction B): copy this file to b_registration.json, fill it from the dev report (results/b/dev.md) and commit it before `bash scripts/b_h100.sh test`. The test run evaluates exactly `methods` on vibid_test, once; `proposed` and `baselines` drive the H1 contrasts of scripts/analyze_vibid.py. The margin of H1b and the main ratio are registered here too.",
+  "main_ratio": 0.0625,
+  "h1b_margin_points": 5.0,
+  "proposed": "unitsel_util",
+  "baselines": ["lead", "qsent", "qunit", "llmlingua2", "llmlingua2w", "llmlingua2w_q5", "rerank", "longllmlingua"],
+  "methods": [
+    "none",
+    "no_context",
+    "lead",
+    "qsent",
+    "qunit",
+    "llmlingua2",
+    "longllmlingua:lm=Qwen/Qwen2.5-1.5B,units=1",
+    "scored:model=microsoft/llmlingua-2-xlm-roberta-large-meetingbank,unit=syllable,name=llmlingua2w",
+    "scored:model=microsoft/llmlingua-2-xlm-roberta-large-meetingbank,unit=syllable,qrel=5,qrel_unit=sentence,name=llmlingua2w_q5",
+    "unitsel:scorer=BAAI/bge-reranker-v2-m3,fine=none,name=rerank",
+    "unitsel:scorer=runs/unit_utility_s0,fine=microsoft/llmlingua-2-xlm-roberta-large-meetingbank,unit=syllable,qrel=5,name=unitsel_util_s0",
+    "unitsel:scorer=runs/unit_utility_s1,fine=microsoft/llmlingua-2-xlm-roberta-large-meetingbank,unit=syllable,qrel=5,name=unitsel_util_s1",
+    "unitsel:scorer=runs/unit_utility_s2,fine=microsoft/llmlingua-2-xlm-roberta-large-meetingbank,unit=syllable,qrel=5,name=unitsel_util_s2"
+  ]
+}

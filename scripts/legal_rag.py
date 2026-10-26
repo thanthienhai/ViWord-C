@@ -32,10 +32,11 @@ from collections import defaultdict
 UNIT_CHARS = 4000  # longer units (tables, annex lists) are cut; such a cut is flagged
 MAX_GOLD_UNITS = 8  # a cited article brings at most its first 8 units into the gold and oracle contexts
 # docs: the documents retrieval may draw from (None = all); fields: what a context row copies from its question
+# (when the question has it: heldout_article exists only in vibid_train)
 DATASETS = {
     "vlegal": {"docs": None, "index": "data/legal/bm25", "fields": ("choices", "answer", "source_task")},
     "vibid": {"docs": ("166581", "166583"), "index": "data/legal/bm25_vibid",
-              "fields": ("answers", "abstractive_answer", "source_task")},
+              "fields": ("answers", "abstractive_answer", "source_task", "heldout_article")},
 }
 
 
@@ -191,7 +192,7 @@ def cmd_contexts(args) -> None:
             stats["tokens"].append(used)
             stats["gold_in"].append(bool(gold_pos))
             row = {"id": q["id"], "cluster": q["cluster"], "context": "\n\n".join(text_of[u] for u in chosen),
-                   "question": q["question"], **{k: q[k] for k in DATASETS[args.dataset]["fields"]},
+                   "question": q["question"], **{k: q[k] for k in DATASETS[args.dataset]["fields"] if k in q},
                    "units": chosen, "gold_positions": gold_pos, "derived_from": f"{args.dataset}_{args.split}"}
             fo.write(json.dumps(row, ensure_ascii=False) + "\n")
     mean = lambda xs: sum(xs) / len(xs)  # noqa: E731
@@ -207,7 +208,7 @@ def main() -> None:
     ap.add_argument("--dataset", default="vlegal", choices=sorted(DATASETS))
     ap.add_argument("--index", default=None, help="index prefix (default: the dataset's)")
     ap.add_argument("--tasks", default="data/tasks")
-    ap.add_argument("--split", default="dev", choices=["dev", "test"])
+    ap.add_argument("--split", default="dev", choices=["dev", "test", "train"])
     ap.add_argument("--mode", default="retrieved", choices=["retrieved", "gold", "random", "oracle"])
     ap.add_argument("--budget", type=int, default=3000, help="reader tokens per context")
     ap.add_argument("--tokenizer", default="Qwen/Qwen2.5-7B-Instruct")

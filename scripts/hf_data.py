@@ -2,6 +2,9 @@
 
   python scripts/hf_data.py push --repo <user>/viword-c-data     # upload the files in data/SHA256SUMS
   python scripts/hf_data.py pull --repo <user>/viword-c-data     # download into data/ and results/
+  python scripts/hf_data.py check --sums data/SHA256SUMS_B       # pulled files present and matching
+  # direction B (legal RAG, ViBidLQA) keeps its own list and repo:
+  python scripts/hf_data.py push --repo <user>/viword-c-legal-data --sums data/SHA256SUMS_B
 
 Needs `huggingface-cli login` (or HF_TOKEN) with write access for push. The repo is created
 private: it holds re-distributed third-party datasets and outputs of an internal teacher model.
@@ -55,13 +58,13 @@ def sha256(path: str) -> str:
     return h.hexdigest()
 
 
-def push(repo: str, message: str) -> None:
+def push(repo: str, message: str, sums: str = SUMS) -> None:
     from huggingface_hub import CommitOperationAdd, HfApi
 
-    files = files_to_push()
+    files = files_to_push(sums)
     api = HfApi()
     api.create_repo(repo, repo_type="dataset", private=True, exist_ok=True)
-    print(f"upload {len(files)} files of {SUMS} -> {repo}")
+    print(f"upload {len(files)} files of {sums} -> {repo}")
     info = api.create_commit(repo, repo_type="dataset", commit_message=message,
                              operations=[CommitOperationAdd(path_in_repo=remote, path_or_fileobj=local)
                                          for local, remote in files])
@@ -81,14 +84,28 @@ def pull(repo: str, revision: str | None) -> None:
             print(f"{repo}/{remote} -> {local}")
 
 
+def check(sums: str) -> None:
+    """Every file of the checksum list is present and matches (after a pull)."""
+    files = files_to_push(sums)
+    print(f"{len(files)} files of {sums} present and matching")
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("action", choices=["push", "pull"])
-    ap.add_argument("--repo", required=True)
+    ap.add_argument("action", choices=["push", "pull", "check"])
+    ap.add_argument("--repo", default=None, help="needed for push and pull")
     ap.add_argument("--revision", default=None, help="pull a specific commit/tag")
     ap.add_argument("--message", default="update data")
+    ap.add_argument("--sums", default=SUMS, help="checksum list (data/SHA256SUMS_B: direction B's legal data)")
     args = ap.parse_args()
-    push(args.repo, args.message) if args.action == "push" else pull(args.repo, args.revision)
+    if args.action == "check":
+        check(args.sums)
+    elif args.repo is None:
+        ap.error("--repo is required for push and pull")
+    elif args.action == "push":
+        push(args.repo, args.message, args.sums)
+    else:
+        pull(args.repo, args.revision)
 
 
 if __name__ == "__main__":
