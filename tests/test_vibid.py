@@ -48,10 +48,17 @@ def test_lqa_reads_every_line_and_scores_f1():
     ex = examples_from_rows("vibid", [{"id": "vbq-1", "cluster": "166581|66", "context": "…",
                                        "question": "Khi nào?", "answers": ["a) Một; b) Hai"]}])[0]
     assert ex.task == "lqa" and MAIN_METRIC["vibid"] == "f1" and MAX_NEW_TOKENS["lqa"] == 64
-    assert "Điều khoản: …" in build_prompt(ex, "…") and "Câu hỏi: Khi nào?" in build_prompt(ex, "…")
+    prompt = build_prompt(ex, "…")
+    assert prompt.endswith("Điều khoản: …\n\nCâu hỏi: Khi nào?\n\nTrả lời:") and "ngắn nhất" in prompt
+    assert prompt.count("Ví dụ ") == 2 and "Trả lời: hưởng nguyên lương\n" in prompt
+    assert "Đấu thầu" not in prompt.split("Điều khoản: …")[0]  # the worked examples come from other laws
     prediction = parse_prediction("lqa", "a) Một;\n\n b) Hai\n")
-    assert prediction == "a) Một; b) Hai" and score(ex, prediction) == {"f1": 1.0, "em": 1.0}
+    assert prediction == "a) Một; b) Hai" and score(ex, prediction) == {"f1": 1.0, "em": 1.0, "recall": 1.0}
+    long = score(ex, "theo quy định a) Một; b) Hai và các điểm khác của khoản này")
+    assert long["recall"] == 1.0 and long["f1"] < 0.6  # recall ignores the extra words, F1 does not
     assert parse_prediction("qa", "a) Một;\nb) Hai") == "a) Một;"  # the registered qa task is unchanged
+    qa = examples_from_rows("viquad", [{"id": "q", "cluster": "c", "context": "…", "question": "?", "answers": ["x"]}])[0]
+    assert set(score(qa, "x")) == {"f1", "em"}
 
 
 def test_vibid_rag_rows_are_refused_outside_the_eval_stage(tmp_path):

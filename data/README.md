@@ -201,8 +201,12 @@ khác.
   bản văn bản).
 - Chia theo Điều vàng (seed 0): `vibid_dev` 390 câu (38 Điều), `vibid_test` 555 câu (52 Điều). `vibid_test` được
   chặn như `vlegal_test` (`viword.heldout.LEGAL_TEST_FILES`).
-- Tác vụ `vibid` (loại `lqa`): prompt "trả lời bằng đoạn trích nguyên văn", tối đa 64 token sinh (32 sẽ cắt 12% đáp
-  án), đọc mọi dòng của câu trả lời, chấm F1 trên âm tiết.
+- Tác vụ `vibid` (loại `lqa`): prompt "trả lời bằng đoạn trích nguyên văn ngắn nhất", kèm hai ví dụ lấy từ văn bản
+  khác (Bộ luật Lao động 2019 Điều 105, Nghị định 27/2014/NĐ-CP Điều 23; `viword.eval.LQA_EXAMPLES`), tối đa 64
+  token sinh (32 sẽ cắt 12% đáp án), đọc mọi dòng của câu trả lời. Chấm F1 trên âm tiết (chỉ số chính), EM và recall
+  của đáp án (tỉ lệ âm tiết của đáp án vàng có trong câu trả lời). Prompt cũ (không ví dụ, không "ngắn nhất") làm
+  reader chép gần nguyên Khoản: ở G0 ngày 26/10/2026 câu trả lời dài 38 từ so với đáp án 12 từ, F1 0,46 với recall
+  0,85 (`run_reports/kaggle_vibid_g0_20261026`).
 
 `python scripts/legal_rag.py index|recall|contexts --dataset vibid` truy xuất chỉ trong 1.040 Khoản của hai văn bản
 (chỉ mục `data/legal/bm25_vibid.*`), nên mọi đơn vị nhiễu cùng luật với Khoản vàng. Trên dev, BM25 chỉ với câu hỏi

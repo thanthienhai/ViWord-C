@@ -46,6 +46,19 @@ def budget_deviates(tokens_budget_ratio: float | None,
             and abs(tokens_budget_ratio - 1.0) > threshold + 1e-12)
 
 
+# Worked examples of the lqa prompt: clauses of vbpl (CC BY 4.0) outside the Bidding Law and its decree, so no
+# ViBidLQA dev/test passage leaks in. With the bare instruction the reader copied whole clauses (2026-10-26 Kaggle
+# G0: answers of 38 words for gold spans of 12, F1 0.46 at recall 0.85), so F1 measured answer length.
+LQA_EXAMPLES = (  # (clause, question, shortest answer span)
+    ("Bộ luật lao động số 45/2019/QH14 Điều 105. Thời giờ làm việc bình thường.\n1. Thời giờ làm việc bình thường "
+     "không quá 08 giờ trong 01 ngày và không quá 48 giờ trong 01 tuần.",  # vbpl 139264|0|105|1
+     "Thời giờ làm việc bình thường trong một tuần tối đa là bao nhiêu?", "không quá 48 giờ trong 01 tuần"),
+    ("Nghị định 27/2014/NĐ-CP Điều 23. Nghỉ hàng năm, nghỉ lễ, tết.\n2. Người lao động được nghỉ làm việc, hưởng "
+     "nguyên lương trong những ngày nghỉ lễ, tết theo quy định tại Điều 115 của Bộ luật Lao động.",  # 34095|0|23|2
+     "Trong những ngày nghỉ lễ, tết, người lao động được hưởng lương như thế nào?", "hưởng nguyên lương"),
+)
+
+
 def build_prompt(example: Example, context: str) -> str:
     if example.task == "summ":
         return ("Tóm tắt văn bản sau thành vài câu ngắn bằng tiếng Việt.\n\n"
@@ -57,9 +70,11 @@ def build_prompt(example: Example, context: str) -> str:
     if example.task == "qa":
         return ("Đọc đoạn văn và trả lời câu hỏi bằng một cụm từ ngắn lấy từ đoạn văn. Chỉ ghi câu trả lời.\n\n"
                 f"Đoạn văn: {context}\n\nCâu hỏi: {example.question}\n\nTrả lời:")
-    if example.task == "lqa":  # an answer may be a whole clause or a list of points
-        return ("Đọc các điều khoản và trả lời câu hỏi bằng đoạn trích nguyên văn từ các điều khoản. "
-                "Chỉ ghi câu trả lời.\n\n"
+    if example.task == "lqa":  # the shortest verbatim span; an answer may still be a list of points
+        shots = "".join(f"Ví dụ {i}:\nĐiều khoản: {c}\nCâu hỏi: {q}\nTrả lời: {a}\n\n"
+                        for i, (c, q, a) in enumerate(LQA_EXAMPLES, 1))
+        return ("Đọc các điều khoản và trả lời câu hỏi bằng đoạn trích nguyên văn ngắn nhất từ các điều khoản đủ để "
+                "trả lời. Không chép cả điều khoản, không giải thích.\n\n" + shots +
                 f"Điều khoản: {context}\n\nCâu hỏi: {example.question}\n\nTrả lời:")
     if example.task == "math":
         # the context holds the worked demonstrations; only they are compressed
@@ -157,6 +172,13 @@ def qa_f1(prediction: str, reference: str) -> float:
     return 2 * precision * recall / (precision + recall)
 
 
+def answer_recall(prediction: str, reference: str) -> float:
+    """Share of the reference's syllables found in the prediction: whether the answer got through, whatever the
+    answer's length (F1 also rewards short answers, and a compressed context gives shorter copies)."""
+    p, r = Counter(_syllables(prediction)), Counter(_syllables(reference))
+    return sum((p & r).values()) / sum(r.values()) if r else 0.0
+
+
 def score(example: Example, prediction: str) -> dict[str, float]:
     """Per-example metrics. The first key is the task's main metric."""
     if example.task == "summ":
@@ -165,8 +187,11 @@ def score(example: Example, prediction: str) -> dict[str, float]:
                 "rouge2": rouge_n(prediction, example.answer, 2)}
     if example.task in ("qa", "lqa"):  # best match over the gold answers
         answers = example.extra["answers"]
-        return {"f1": max(qa_f1(prediction, a) for a in answers),
-                "em": float(any(_syllables(prediction) == _syllables(a) for a in answers))}
+        out = {"f1": max(qa_f1(prediction, a) for a in answers),
+               "em": float(any(_syllables(prediction) == _syllables(a) for a in answers))}
+        if example.task == "lqa":
+            out["recall"] = max(answer_recall(prediction, a) for a in answers)
+        return out
     if example.task == "ruler":  # RULER string match: share of gold strings found in the output
         answers = example.extra["answers"]
         return {"recall": sum(a.lower() in prediction.lower() for a in answers) / len(answers)}
