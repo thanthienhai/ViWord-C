@@ -97,6 +97,22 @@ def test_units_carry_their_identifiers():
     assert us[2].points == ["a", "b", "c"] and "\nb) Hộ kinh doanh;" in us[2].text
 
 
+def test_doc_labels_and_rows_round_trip():
+    from viword.legal import article_from_row, article_units, doc_label
+    assert doc_label("Nghị định", "Nghị định số 77/2025/NĐ-CP quy định …", "77/2025/NĐ-CP") == "Nghị định 77/2025/NĐ-CP"
+    assert doc_label("Luật", "Luật Lưu trữ số 33/2024/QH15", "33/2024/QH15") == "Luật Lưu trữ số 33/2024/QH15"
+    assert doc_label("Luật", "LUẬT TỔ CHỨC TÒA ÁN NHÂN DÂN SỐ 34/2024/QH15", "34/2024/QH15") == \
+        "Luật Tổ chức tòa án nhân dân số 34/2024/QH15"
+    assert doc_label("Luật", "Đất đai", "31/2024/QH15") == "Luật Đất đai số 31/2024/QH15"
+    a = parse_html(DECREE).articles[1]
+    row = {"article": a.number, "article_title": a.title, "part": a.part, "intro": a.intro, "attachment": 0,
+           "clauses": [{"n": c.number, "text": c.text, "points": [{"l": p.letter, "text": p.text} for p in c.points]}
+                       for c in a.clauses], "points": []}
+    assert article_from_row(row) == a
+    assert [u.text for u in article_units(article_from_row(row), "X")] == \
+        [u.text for u in units(parse_html(DECREE), "X") if u.article == "2"]
+
+
 def test_html_lines():
     assert html_lines("<p>a<br/>b&nbsp; c</p><script>x</script><td>d</td>") == ["a", "b c", "d"]
 

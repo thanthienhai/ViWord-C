@@ -290,28 +290,54 @@ def clause_text(c: Clause) -> str:
     return "\n".join([f"{c.number}. {c.text}".rstrip()] + [f"{p.letter}) {p.text}" for p in c.points])
 
 
+def article_units(a: Article, label: str = "", attachment_title: str = "") -> list[Unit]:
+    """The units of one article: its lead-in (clause 0) and one unit per clause, or the whole article when it
+    has no clauses. A form in an appendix gives none."""
+    if is_placeholder(a.title) or (not a.clauses and not a.points and is_placeholder(a.intro)):
+        return []
+    owner = label
+    if a.attachment:
+        name = attachment_title.capitalize() or "Văn bản"
+        owner = f"{name} (kèm theo {label})" if label else name
+    head = (f"{owner} " if owner else "") + f"Điều {a.number}. {a.title}".rstrip(". ") + "."
+    if not a.clauses:
+        body = "\n".join([a.intro] * bool(a.intro) + [f"{p.letter}) {p.text}" for p in a.points])
+        return [Unit(a.number, None, f"{head}\n{body}".rstrip(), [p.letter for p in a.points], a.attachment)]
+    out = [Unit(a.number, 0, f"{head}\n{a.intro}", attachment=a.attachment)] if a.intro else []
+    for c in a.clauses:
+        out.append(Unit(a.number, c.number, f"{head}\n{clause_text(c)}", [p.letter for p in c.points], a.attachment))
+    return out
+
+
 def units(doc: LegalDocument, label: str = "") -> list[Unit]:
     """Clause-level units; `label` (e.g. "Nghị định 88/2023/NĐ-CP") heads every unit's text so that a reader
     can cite it. Articles of an attached text are headed by its name: "Quy chế … (kèm theo <label>)"."""
-    out = []
-    for a in doc.articles:
-        if is_placeholder(a.title) or (not a.clauses and not a.points and is_placeholder(a.intro)):
-            continue  # a form in an appendix, not a provision
-        owner = label
-        if a.attachment:
-            name = doc.attachments[a.attachment - 1].title.capitalize() or "Văn bản"
-            owner = f"{name} (kèm theo {label})" if label else name
-        head = (f"{owner} " if owner else "") + f"Điều {a.number}. {a.title}".rstrip(". ") + "."
-        if a.clauses:
-            if a.intro:
-                out.append(Unit(a.number, 0, f"{head}\n{a.intro}", attachment=a.attachment))
-            for c in a.clauses:
-                out.append(Unit(a.number, c.number, f"{head}\n{clause_text(c)}", [p.letter for p in c.points],
-                                a.attachment))
-        else:
-            body = "\n".join([a.intro] * bool(a.intro) + [f"{p.letter}) {p.text}" for p in a.points])
-            out.append(Unit(a.number, None, f"{head}\n{body}".rstrip(), [p.letter for p in a.points], a.attachment))
-    return out
+    return [u for a in doc.articles
+            for u in article_units(a, label, doc.attachments[a.attachment - 1].title if a.attachment else "")]
+
+
+def article_from_row(row: dict) -> Article:
+    """An article back from a data/legal/vbpl_articles.jsonl row (scripts/build_legal_corpus.py)."""
+    return Article(row["article"], row["article_title"], row["part"], row["intro"],
+                   [Clause(c["n"], c["text"], [Point(p["l"], p["text"]) for p in c["points"]]) for c in row["clauses"]],
+                   [Point(p["l"], p["text"]) for p in row["points"]], row["attachment"])
+
+
+_NAMED_TYPES = ("Hiến pháp", "Bộ luật", "Luật", "Pháp lệnh")
+
+
+def doc_label(doc_type: str, title: str, number: str) -> str:
+    """How a document is cited: laws by name and number ("Luật Lưu trữ số 33/2024/QH15"), the rest by type and
+    number ("Nghị định 77/2025/NĐ-CP")."""
+    if doc_type not in _NAMED_TYPES:
+        return f"{doc_type} {number}".strip()
+    name = normalize(title)
+    name = re.sub(r"\s*\b[Ss][ốỐ]\s*" + NUMBER, "", name, flags=re.I).strip()
+    if name.lower().startswith(doc_type.lower() + " "):
+        name = name[len(doc_type) + 1:]
+    if _is_caps(name):
+        name = name.capitalize()
+    return f"{doc_type} {name} số {number}".strip()
 
 
 # ---------------------------------------------------------------------------------------------- citations

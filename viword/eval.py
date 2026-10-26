@@ -16,7 +16,7 @@ from .data import Example
 
 NLI_LABELS = ["entailment", "contradiction", "neutral", "other"]
 MAIN_METRIC = {"vietnews": "rougeL", "vinli": "accuracy", "vimmrc": "accuracy", "belebele": "accuracy",
-               "viquad": "f1", "gsm8k": "accuracy", "oneruler": "recall"}
+               "viquad": "f1", "gsm8k": "accuracy", "oneruler": "recall", "vlegal": "accuracy"}
 
 BUDGET_DEVIATION_THRESHOLD = 0.05
 

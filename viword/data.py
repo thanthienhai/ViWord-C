@@ -21,6 +21,7 @@ TASKS = {
     "viquad": "qa",  # extractive QA (UIT-ViQuAD 2.0, answerable questions)
     "gsm8k": "math",  # compress the few-shot chain-of-thought demonstrations (vi_gsm8k)
     "oneruler": "ruler",  # long-context retrieval / aggregation (OneRuler, Vietnamese)
+    "vlegal": "mc",  # direction B: VLegal-Bench questions over retrieved legal provisions
 }
 
 CLUSTER_SEMANTICS = {

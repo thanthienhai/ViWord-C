@@ -25,6 +25,10 @@ ALLOW_TEST_ENV = "VIWORD_TEST_EVAL"
 TEST_FILES = {"belebele": "belebele", "vinli_test": "vinli", "vimmrc_test": "vimmrc",
               "vietnews_test": "vietnews", "viquad_test": "viquad", "gsm8k_test": "gsm8k",
               "oneruler_test": "oneruler"}
+# Direction B (legal RAG) keeps its own test split, outside the registered exclusion list: no reader has scored
+# any of its rows, so every row is unseen, and RAG rows built from it carry derived_from = "vlegal_test".
+LEGAL_TEST_FILES = {"vlegal_test": "vlegal"}
+ALL_TEST_FILES = {**TEST_FILES, **LEGAL_TEST_FILES}
 
 
 def load_exclusions(path: str | Path = EXCLUSIONS) -> dict[str, dict]:
@@ -66,7 +70,7 @@ def fingerprint(row: dict) -> str:
 def unseen_fingerprints(tasks_dir: str | Path, exclusions: dict[str, dict]) -> set[str]:
     """Fingerprints of the test rows that no reader has scored yet."""
     unseen = set()
-    for stem in TEST_FILES:
+    for stem in ALL_TEST_FILES:
         path = Path(tasks_dir) / f"{stem}.jsonl"
         if path.exists():
             skip = exclusions.get(stem, {}).get("ids", set())
@@ -85,7 +89,7 @@ def refuse_unseen_test_rows(rows: list[dict], tasks_dir: str | Path = ROOT / "da
     unseen = unseen_fingerprints(tasks_dir, exclusions)
     hits = [row["id"] for row in rows if fingerprint(row) in unseen]
     # rows built from test passages (scripts/make_long_context.py) are test material too
-    hits += [row["id"] for row in rows if row.get("derived_from") in TEST_FILES]
+    hits += [row["id"] for row in rows if row.get("derived_from") in ALL_TEST_FILES]
     if hits:
         raise SystemExit(f"refusing to let a reader score {len(hits)} test row(s) kept for the test run "
                          f"(e.g. {hits[0]}): only `run_pipeline.sh eval` reads them ({ALLOW_TEST_ENV}=1). "
