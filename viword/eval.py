@@ -16,7 +16,8 @@ from .data import Example
 
 NLI_LABELS = ["entailment", "contradiction", "neutral", "other"]
 MAIN_METRIC = {"vietnews": "rougeL", "vinli": "accuracy", "vimmrc": "accuracy", "belebele": "accuracy",
-               "viquad": "f1", "gsm8k": "accuracy", "oneruler": "recall", "vlegal": "accuracy"}
+               "viquad": "f1", "gsm8k": "accuracy", "oneruler": "recall", "vlegal": "accuracy",
+               "vibid": "f1"}
 
 BUDGET_DEVIATION_THRESHOLD = 0.05
 
@@ -56,6 +57,10 @@ def build_prompt(example: Example, context: str) -> str:
     if example.task == "qa":
         return ("Đọc đoạn văn và trả lời câu hỏi bằng một cụm từ ngắn lấy từ đoạn văn. Chỉ ghi câu trả lời.\n\n"
                 f"Đoạn văn: {context}\n\nCâu hỏi: {example.question}\n\nTrả lời:")
+    if example.task == "lqa":  # an answer may be a whole clause or a list of points
+        return ("Đọc các điều khoản và trả lời câu hỏi bằng đoạn trích nguyên văn từ các điều khoản. "
+                "Chỉ ghi câu trả lời.\n\n"
+                f"Điều khoản: {context}\n\nCâu hỏi: {example.question}\n\nTrả lời:")
     if example.task == "math":
         # the context holds the worked demonstrations; only they are compressed
         return ("Giải bài toán theo cách của các ví dụ. Dòng cuối ghi \"Đáp án: <số>\".\n\n"
@@ -70,7 +75,8 @@ def build_prompt(example: Example, context: str) -> str:
 # nli/mc: 32, not 8, so that a reader opening with a sentence (SeaLLM-7B-v2) still reaches its label; decoding is
 # greedy and parse_prediction takes the first label, so an answer readable within 8 tokens is unchanged, except a
 # letter read from a word cut by the 8th token ("C" of "Câu A: ...", seen once in the 2026-10-21 Kaggle smoke)
-MAX_NEW_TOKENS = {"summ": 256, "nli": 32, "mc": 32, "qa": 32, "math": 320, "ruler": 64}
+# lqa: 64, the 97th percentile of the ViBidLQA test answers in reader tokens (32 would cut 12% of them)
+MAX_NEW_TOKENS = {"summ": 256, "nli": 32, "mc": 32, "qa": 32, "lqa": 64, "math": 320, "ruler": 64}
 
 
 def parse_prediction(task: str, text: str) -> str:
@@ -84,6 +90,8 @@ def parse_prediction(task: str, text: str) -> str:
         return match.group(1) if match else ""
     if task == "qa":
         return text.split("\n")[0].strip()
+    if task == "lqa":  # every line: 2% of the gold answers are lists over several lines
+        return " ".join(line.strip() for line in text.split("\n") if line.strip())
     if task == "math":
         match = re.search(r"Đáp án\s*:\s*(-?\d[\d.,]*)", text)
         numbers = [match.group(1)] if match else re.findall(r"-?\d[\d.,]*", text)
@@ -155,7 +163,7 @@ def score(example: Example, prediction: str) -> dict[str, float]:
         return {"rougeL": rouge_l(prediction, example.answer),
                 "rouge1": rouge_n(prediction, example.answer, 1),
                 "rouge2": rouge_n(prediction, example.answer, 2)}
-    if example.task == "qa":  # best match over the gold answers
+    if example.task in ("qa", "lqa"):  # best match over the gold answers
         answers = example.extra["answers"]
         return {"f1": max(qa_f1(prediction, a) for a in answers),
                 "em": float(any(_syllables(prediction) == _syllables(a) for a in answers))}

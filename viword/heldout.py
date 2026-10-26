@@ -26,8 +26,9 @@ TEST_FILES = {"belebele": "belebele", "vinli_test": "vinli", "vimmrc_test": "vim
               "vietnews_test": "vietnews", "viquad_test": "viquad", "gsm8k_test": "gsm8k",
               "oneruler_test": "oneruler"}
 # Direction B (legal RAG) keeps its own test split, outside the registered exclusion list: no reader has scored
-# any of its rows, so every row is unseen, and RAG rows built from it carry derived_from = "vlegal_test".
-LEGAL_TEST_FILES = {"vlegal_test": "vlegal"}
+# any of its rows, so every row is unseen, and RAG rows built from it carry derived_from = "vlegal_test" (or
+# "vibid_test").
+LEGAL_TEST_FILES = {"vlegal_test": "vlegal", "vibid_test": "vibid"}
 ALL_TEST_FILES = {**TEST_FILES, **LEGAL_TEST_FILES}
 
 

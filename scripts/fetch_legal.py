@@ -37,6 +37,12 @@ SOURCES = {
         "license": "CC BY 4.0 (compiled dataset)",
         "allow": ["data/*.parquet", "README.md"],
     },
+    "vibidlqa": {  # gated (accept the terms on the Hub first), 11.6 MB
+        "repo": "ntphuc149/ViBidLQA",
+        "revision": "95dc5d6e4bd87a1592c078e37fd20a3d1f21d2eb",
+        "license": "apache-2.0",
+        "allow": ["*.csv", "README.md"],
+    },
 }
 
 

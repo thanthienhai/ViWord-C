@@ -112,21 +112,31 @@ def _select_sentences(context: Context, sentence_scores: list[float], budget: in
     budget with the head of the best sentence that did not fit; restore original order.
     Without the fill, a context of one long sentence (most ViNLI premises) compresses to
     nothing and the baseline degenerates into `no_context`."""
-    sentences = context.doc
-    costs = [counter.count(render_all(s)) + 1 for s in sentences]
-    keep = greedy_select(sentence_scores, costs, budget)
-    rest = [i for i in range(len(sentences)) if not keep[i]]
-    partial = max(rest, key=lambda i: sentence_scores[i]) if rest else None
-    words, scores = [], []
-    for i, s in enumerate(sentences):
-        for j, w in enumerate(s):
-            words.append(w)
+    words, groups = [], []
+    for s in context.doc:
+        groups.append(list(range(len(words), len(words) + len(s))))
+        words += s
+    return _select_groups(words, groups, sentence_scores, budget, counter)
+
+
+def _select_groups(words: list, groups: list[list[int]], group_scores: list[float], budget: int,
+                   counter: TokenCounter, fill: bool = True) -> str:
+    """`_select_sentences` for any grouping of the words (sentences, or the units of a legal RAG context).
+    Without `fill`, groups are taken in score order only until the first one that does not fit, whose head then
+    fills the budget (no smaller, lower-ranked group jumps the queue)."""
+    costs = [counter.count(render_all([words[k] for k in g])) + 1 for g in groups]
+    keep = greedy_select(group_scores, costs, budget, fill=fill)
+    rest = [i for i in range(len(groups)) if not keep[i]]
+    partial = max(rest, key=lambda i: group_scores[i]) if rest else None
+    scores = [0.0] * len(words)
+    for i, g in enumerate(groups):
+        for j, k in enumerate(g):
             if keep[i]:
-                scores.append(2.0)
+                scores[k] = 2.0
             elif i == partial:
-                scores.append(1.0 - j / len(s))  # earlier words of the partial sentence first
+                scores[k] = 1.0 - j / len(g)  # earlier words of the partial group first
             else:
-                scores.append(-1.0 - len(words) / 1e6)
+                scores[k] = -1.0 - (k + 1) / 1e6
     return select_units(words, scores, budget, counter, fill=False)
 
 
@@ -161,6 +171,31 @@ class QuestionSentences:
         coverage = sentence_coverage(context.doc, query_text(context, self.choices))
         n = len(coverage)
         return _select_sentences(context, [c - i / (1e3 * n) for i, c in enumerate(coverage)], budget, counter)
+
+
+class QuestionUnits:
+    """Query-aware unit extraction for the legal RAG contexts (direction B): the units of the context (blocks
+    separated by blank lines, scripts/legal_rag.py) ranked by BM25 against the question, idf over the units of
+    this context, earlier units first on ties; whole units in rank order while they fit, then the head of the next
+    one, as a RAG pipeline that reranks and truncates. The lexical unit-level control of H1 ("BM25 over units");
+    `qsent` is its sentence-level counterpart."""
+    name = "qunit"
+
+    def compress(self, context, budget, counter):
+        from .legal import word_blocks
+        from .legal_index import BM25
+
+        words = flatten(context.doc)
+        units = context.text.split("\n\n")
+        groups = [[] for _ in units]
+        for k, b in enumerate(word_blocks(words, context.text)):
+            groups[b].append(k)
+        bm25 = BM25.fit(units).scores(context.question or "")
+        n = len(units)
+        scores = [float(s) - i / (1e3 * n) for i, s in enumerate(bm25)]
+        kept = [i for i, g in enumerate(groups) if g]
+        return _select_groups(words, [groups[i] for i in kept], [scores[i] for i in kept], budget, counter,
+                              fill=False)
 
 
 def lm_dtype(torch, device: str):

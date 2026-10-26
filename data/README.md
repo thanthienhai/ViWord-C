@@ -155,6 +155,7 @@ từng file). Tải lại: `python scripts/fetch_legal.py`. Giấy phép đượ
 | `vlegal_bench` | `CMC-OPENAI/VLegal-Bench` @215f273 | CC BY-NC-ND 4.0 | Chỉ đánh giá; không phát hành ngữ cảnh đã nén hay dịch, chỉ công bố điểm |
 | `vbpl` | `th1nhng0/vietnamese-legal-documents` @8977887, chỉ `data/` (810 MB) | CC BY 4.0 (bản biên soạn) | Kho văn bản chính |
 | `phapdien` | `tmquan/phapdien-moj-gov-vn` @a1b6860, không lấy embedding | CC BY 4.0 | Dự phòng; xem lưu ý dưới |
+| `vibidlqa` | `ntphuc149/ViBidLQA` @95dc5d6 (gated: bấm đồng ý trên Hugging Face trước) | apache-2.0 | Hỏi đáp trích đoạn; văn bản gốc lấy từ thuvienphapluat.vn |
 
 `python scripts/build_legal_corpus.py` tách các văn bản trung ương ("Trung ương" và "Toàn quốc"; các luật 2024–2025
 mang nhãn "Toàn quốc"), không lấy bản dịch, bằng `viword.legal`, rồi ghi:
@@ -187,3 +188,31 @@ Kết quả lần dựng ngày 26/10/2026:
 Phương án nhiễu của 3.1 phần lớn là trích dẫn không có thật (ví dụ Khoản 4 Điều 10 của một nghị định chỉ có 3
 Điều). phapdien gần như không chứa các văn bản 3.1 trích dẫn: chỉ 6/299 cặp (văn bản, Điều) có số hiệu, vì bộ pháp
 điển cập nhật chậm và đánh số lại Điều. Vì vậy vbpl là kho chính.
+
+### ViBidLQA (26/10/2026)
+
+Chỉ dùng file test (1.000 câu do người viết, đáp án là đoạn trích); file train (5.298 câu do LLM sinh) để dành làm
+nhãn huấn luyện. `python scripts/make_vibid_tasks.py` gắn đoạn văn của mỗi câu với Điều của Luật Đấu thầu
+22/2023/QH15 (vbpl 166581) hoặc Nghị định 24/2024/NĐ-CP (166583) có văn bản phủ ≥ 90% âm tiết của đoạn, rồi lấy
+Khoản vàng là các Khoản của Điều đó chứa đáp án. Ngữ cảnh vì vậy chỉ gồm đơn vị vbpl, Khoản vàng trông như mọi Khoản
+khác.
+
+- Giữ 945 câu; bỏ 22 câu có đoạn văn không khớp Điều nào và 33 câu có đáp án không nằm trong Khoản nào (khác phiên
+  bản văn bản).
+- Chia theo Điều vàng (seed 0): `vibid_dev` 390 câu (38 Điều), `vibid_test` 555 câu (52 Điều). `vibid_test` được
+  chặn như `vlegal_test` (`viword.heldout.LEGAL_TEST_FILES`).
+- Tác vụ `vibid` (loại `lqa`): prompt "trả lời bằng đoạn trích nguyên văn", tối đa 64 token sinh (32 sẽ cắt 12% đáp
+  án), đọc mọi dòng của câu trả lời, chấm F1 trên âm tiết.
+
+`python scripts/legal_rag.py index|recall|contexts --dataset vibid` truy xuất chỉ trong 1.040 Khoản của hai văn bản
+(chỉ mục `data/legal/bm25_vibid.*`), nên mọi đơn vị nhiễu cùng luật với Khoản vàng. Trên dev, BM25 chỉ với câu hỏi
+xếp một Khoản vàng lên đầu ở 75% câu và đưa vào top-10 ở 99%. Ngữ cảnh khoảng 2.750 token, 10,4 Khoản:
+
+| Chế độ | File | Khoản vàng |
+|---|---|---|
+| retrieved: thứ tự BM25 | `vibid_rag_dev.jsonl` | có ở 98,7%, thường đứng đầu |
+| random: Khoản vàng rút khỏi thứ hạng, đặt ở vị trí ngẫu nhiên | `vibid_rag_random_dev.jsonl` | 100%, vị trí đều |
+| oracle: chỉ Khoản vàng | `vibid_rag_oracle_dev.jsonl` | 305 token trung bình |
+
+Chế độ `gold` của VLegal không dùng cho ViBidLQA: Khoản vàng đã được truy xuất thì giữ nguyên thứ hạng, nên vẫn
+đứng đầu ở 76% câu và lead thắng chỉ nhờ vị trí.

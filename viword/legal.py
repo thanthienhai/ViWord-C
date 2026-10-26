@@ -323,6 +323,66 @@ def article_from_row(row: dict) -> Article:
                    [Point(p["l"], p["text"]) for p in row["points"]], row["attachment"])
 
 
+_UNIT_ID = re.compile(r"^(.*?\bĐiều\s+\d+[a-zđ]?)\.")
+_CLAUSE_ID = re.compile(r"^\d+\.")
+
+
+def identifier_spans(text: str) -> list[tuple[int, int]]:
+    """Character spans of the identifiers in a RAG context of units separated by blank lines
+    (scripts/legal_rag.py): the document label and "Điều N" that open each unit's first line (not the article
+    title), and the clause number that opens its second line. Task 3.1 is answered with exactly these."""
+    spans, pos = [], 0
+    for block in text.split("\n\n"):
+        first, newline, rest = block.partition("\n")
+        if (m := _UNIT_ID.match(first)):
+            spans.append((pos, pos + m.end(1)))
+        if newline and (c := _CLAUSE_ID.match(rest)):
+            start = pos + len(first) + 1
+            spans.append((start, start + c.end()))
+        pos += len(block) + 2
+    return spans
+
+
+def word_starts(words: list, text: str) -> list[int | None]:
+    """Character offset in `text` of each segmented word of it (in order), or None. Words are aligned to the
+    text by finding their syllables one after another; a syllable not found within 200 characters is skipped,
+    so a segmenter's change to a token costs that word's offset, not the alignment."""
+    from .segment import normalize as seg_normalize
+
+    starts, pos = [], 0
+    for w in words:
+        start = None
+        for s in w.syllables:
+            i = text.find(seg_normalize(s), pos, pos + 200 + len(s))
+            if i >= 0:
+                start = i if start is None else start
+                pos = i + len(s)
+        starts.append(start)
+    return starts
+
+
+def identifier_flags(words: list, text: str) -> list[bool]:
+    """For each segmented word of `text` (in order), whether it starts inside an identifier span."""
+    spans = identifier_spans(text)
+    return [s is not None and any(a <= s < b for a, b in spans) for s in word_starts(words, text)]
+
+
+def word_blocks(words: list, text: str) -> list[int]:
+    """For each segmented word of `text` (in order), the index of its unit (blocks separated by blank lines);
+    a word that could not be aligned stays in the unit of the word before it."""
+    import bisect
+
+    starts, pos = [0], 0
+    for block in text.split("\n\n")[:-1]:
+        pos += len(block) + 2
+        starts.append(pos)
+    out, last = [], 0
+    for s in word_starts(words, text):
+        last = last if s is None else bisect.bisect_right(starts, s) - 1
+        out.append(last)
+    return out
+
+
 _NAMED_TYPES = ("Hiến pháp", "Bộ luật", "Luật", "Pháp lệnh")
 
 

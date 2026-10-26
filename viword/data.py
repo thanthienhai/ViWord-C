@@ -22,6 +22,7 @@ TASKS = {
     "gsm8k": "math",  # compress the few-shot chain-of-thought demonstrations (vi_gsm8k)
     "oneruler": "ruler",  # long-context retrieval / aggregation (OneRuler, Vietnamese)
     "vlegal": "mc",  # direction B: VLegal-Bench questions over retrieved legal provisions
+    "vibid": "lqa",  # direction B: ViBidLQA, extractive answers over retrieved clauses of the Bidding Law
 }
 
 CLUSTER_SEMANTICS = {
@@ -36,12 +37,12 @@ CLUSTER_SEMANTICS = {
 class Example:
     id: str
     cluster: str
-    task: str  # "summ", "nli", "mc", "qa", "math" or "ruler"
+    task: str  # "summ", "nli", "mc", "qa", "lqa", "math" or "ruler"
     context: str  # the part that is compressed
     question: str = ""  # mc question, or nli hypothesis (never compressed)
     choices: list[str] = field(default_factory=list)
     answer: str = ""  # mc: "A".."D"; nli: label; summ: reference summary; math: number
-    # e.g. {"context_en": ...} for Belebele; {"answers": [...]} for qa and ruler;
+    # e.g. {"context_en": ...} for Belebele; {"answers": [...]} for qa, lqa and ruler;
     # {"template": "...{context}...", "subtask": ...} for ruler
     extra: dict = field(default_factory=dict)
 
@@ -64,6 +65,7 @@ def load_task(name: str, path: str, limit: int | None = None) -> list[Example]:
     vimmrc:   {id, cluster, context, question, choices, answer}   (answer = "A".."D")
     belebele: same as vimmrc, optional context_en
     viquad:   {id, cluster, context, question, answers}
+    vibid:    same as viquad (task "lqa": longer answers, legal prompt; scripts/legal_rag.py --dataset vibid)
     gsm8k:    {id, cluster, context (demonstrations), question, answer}
     oneruler: {id, cluster, context, template, answers, subtask}   (template contains "{context}")
     """
@@ -80,7 +82,7 @@ def examples_from_rows(name: str, rows: list[dict]) -> list[Example]:
         elif task == "nli":
             ex = Example(r["id"], r["cluster"], task, r["premise"], question=r["hypothesis"],
                          answer=r["label"])
-        elif task == "qa":
+        elif task in ("qa", "lqa"):
             ex = Example(r["id"], r["cluster"], task, r["context"], question=r["question"],
                          extra={"answers": r["answers"]})
         elif task == "math":

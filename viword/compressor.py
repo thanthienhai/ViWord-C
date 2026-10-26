@@ -21,7 +21,8 @@ query-aware variant toward RAG. With `qrel_unit="sentence"` every word gets inst
 share of the question's content syllables that its sentence covers, so whole relevant
 sentences rise (on long contexts the word bonus alone mostly keeps the question's own
 words); `qrel_choices` adds the multiple-choice options to the question. None of these
-is part of H1 or H2.
+is part of H1 or H2. `keep_ids` (direction B, legal RAG) gives hard priority to each unit's
+identifier (document label, "Điều N", clause number; `legal.identifier_flags`).
 """
 from __future__ import annotations
 
@@ -60,6 +61,7 @@ class SelectionConfig:
     qrel: float = 0.0  # question-relevance bonus (0 = off; query-aware, descriptive)
     qrel_unit: str = "word"  # "word" or "sentence" (each word gets its sentence's coverage of the question)
     qrel_choices: bool = False  # the question plus the mc options as the query
+    keep_ids: bool = False  # legal RAG contexts: unit identifiers (document label, Điều N, clause number) first
 
 
 # The syllable mask of the latest select_units() call and the text it rendered. Every mask-based method
@@ -209,6 +211,13 @@ class ScoredCompressor:
             scores = [s + cfg.delta * p for s, p in zip(scores, protected)]
         elif cfg.protect in {"hard", "force", "force_ctx"}:
             priority = [int(p) for p in protected]
+        if cfg.keep_ids:
+            from .legal import identifier_flags
+
+            ids = identifier_flags(words, context.text)
+            if cfg.unit != "word":
+                ids = [f for w, f in zip(words, ids) for _ in w.syllables]
+            priority = [max(p, int(f)) for p, f in zip(priority or [0] * len(ids), ids)]
         return words, scores, priority, [bool(p) for p in protected]
 
     def compress(self, context: Context, budget: int, counter: TokenCounter) -> str:
