@@ -1,5 +1,9 @@
 # Hướng dẫn chạy hướng B (nén ngữ cảnh RAG pháp luật, ViBidLQA) trên máy H100
 
+> **Đội vận hành dùng [`RUN_OPS_B.md`](RUN_OPS_B.md)** (một file `scripts/ops_b_run.sh`, ba phần, tự clone code,
+> kiểm tra dữ liệu, đóng gói và đẩy kết quả, chạy lại được sau lỗi). File này mô tả từng giai đoạn của
+> `scripts/b_h100.sh`, cho người phát triển chạy tay hoặc chạy lại một giai đoạn.
+
 Một script, `scripts/b_h100.sh`, chia theo giai đoạn. Sau mỗi lần gọi, gửi lại thư mục `results/b/` và chờ chủ đề tài
 trả lời trước giai đoạn kế tiếp.
 
@@ -34,10 +38,11 @@ bash scripts/b_h100.sh labels train dev
 tar czf b_dev.tgz results/b            # gửi lại, chờ trả lời
 ```
 
-GPU khác: `GPU=1 bash scripts/b_h100.sh ...`. Theo dõi: `tail -f results/b/b.log`; log chi tiết từng bước ở
+GPU khác: `GPU=1 bash scripts/b_h100.sh ...`. Chạy lại một giai đoạn sau lỗi: nhãn đầy đủ và scorer đã có `train_meta.json`
+được bỏ qua, câu trả lời của reader được dùng lại (`.cache/reader_b.jsonl`). Theo dõi: `tail -f results/b/b.log`; log chi tiết từng bước ở
 `results/b/logs/`.
 
-**smoke thành công** khi `b.log` có dòng `smoke done`, ba dòng `wrote … rows` và bốn dòng tóm tắt phương pháp với
+**smoke thành công** khi `b.log` có dòng `smoke done`, hai dòng `wrote …` (nhãn, đánh giá) và bốn dòng tóm tắt phương pháp với
 `max tokens/budget` ≤ 1,05. Nếu vLLM báo lỗi ở bước nhãn (`prompt_logprobs`), gửi `results/b/logs/smoke_labels.log`.
 
 ## Giai đoạn test (chỉ khi được báo)

@@ -16,6 +16,9 @@ và kiểm tra lực thống kê trên dev, rồi đánh giá trên 7 tập test
 Script tự clone code, tạo môi trường, tải và kiểm tra dữ liệu, ghi log và đóng gói kết quả. Không cần sửa code hay
 cấu hình gì.
 
+> Hướng B (nén ngữ cảnh RAG pháp luật, nhánh `rag-legal`) là một lần chạy riêng, với file và thư mục riêng:
+> xem [`RUN_OPS_B.md`](RUN_OPS_B.md).
+
 Lý do phải dừng giữa các phần:
 - Sau phần 1: nếu cổng G3 không đạt thì cách đánh giá phải đổi.
 - Sau phần 2: π chọn trên dev phải được chủ đề tài **commit vào git** trước khi nhìn tập test. Bước `eval` từ chối

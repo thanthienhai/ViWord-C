@@ -29,6 +29,8 @@ LABELS=data/labels/vibid_train_utility.jsonl
 
 export CUDA_VISIBLE_DEVICES=$GPU PYTHONPATH=. PYTHONIOENCODING=utf-8 TOKENIZERS_PARALLELISM=false
 export VIWORD_LOGIT_CACHE=${VIWORD_LOGIT_CACHE:-$PWD/.cache/logits_b}
+# reader outputs are kept by prompt, so a rerun after an error does not ask the reader again
+export VIWORD_READER_CACHE=${VIWORD_READER_CACHE:-$PWD/.cache/reader_b.jsonl}
 mkdir -p "$OUT/eval" "$OUT/logs"
 log() { echo -e "\n=== $* ($(date '+%F %T'))" | tee -a "$OUT/b.log"; }
 activate() {
@@ -121,6 +123,10 @@ EOF
 
 step_labels() {
   activate
+  if [ -s "$LABELS" ] && [ "$(wc -l < "$LABELS")" -eq "$(wc -l < data/tasks/vibid_rag_random_train.jsonl)" ]; then
+    log "labels: $LABELS complete from an earlier run, skipped"
+    return 0
+  fi
   log "labels: utility of every candidate clause, ViBidLQA train"
   python scripts/vibid_labels.py --contexts data/tasks/vibid_rag_random_train.jsonl --reader "$READER" \
     --out "$LABELS" 2>&1 | tee "$OUT/logs/labels.log" | grep "wrote" | tee -a "$OUT/b.log"
@@ -132,6 +138,11 @@ step_train() {
   local s label
   for s in $SEEDS; do
     for label in utility gold; do
+      if [ -s "runs/unit_${label}_s$s/train_meta.json" ]; then  # finished in an earlier run
+        log "train: runs/unit_${label}_s$s done earlier, skipped"
+        cp "runs/unit_${label}_s$s/train_meta.json" "$OUT/unit_${label}_s${s}_train_meta.json"
+        continue
+      fi
       log "train: unit scorer, $label labels, seed $s"
       python scripts/train_unit_scorer.py --labels "$LABELS" --label "$label" --model-name "$ENCODER" --seed "$s" \
         --out "runs/unit_${label}_s$s" > "$OUT/logs/train_${label}_s$s.log" 2>&1
@@ -139,6 +150,11 @@ step_train() {
       cp "runs/unit_${label}_s$s/train_meta.json" "$OUT/unit_${label}_s${s}_train_meta.json"
     done
   done
+  if [ -s runs/unit_utility_unseen_s0/train_meta.json ]; then
+    log "train: runs/unit_utility_unseen_s0 done earlier, skipped"
+    cp runs/unit_utility_unseen_s0/train_meta.json "$OUT/unit_utility_unseen_s0_train_meta.json"
+    return 0
+  fi
   log "train: unit scorer without the train questions on dev/test gold articles, seed 0"
   python scripts/train_unit_scorer.py --labels "$LABELS" --label utility --model-name "$ENCODER" --seed 0 \
     --exclude-heldout-articles --out runs/unit_utility_unseen_s0 > "$OUT/logs/train_utility_unseen_s0.log" 2>&1
