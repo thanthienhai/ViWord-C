@@ -144,3 +144,46 @@ chỉ là bộ lọc bảo thủ (loại thừa ~100 đoạn), không phải b�
   31%, không phải 25%.
 - **Kho chưng cất:** sau lọc rò rỉ còn 4.232 đoạn VietNews và 4.930 đoạn Wikipedia; đoạn Wikipedia dài gấp khoảng
   2,3 lần (trung vị 1.166 so với 502 âm tiết), nên chiếm phần lớn số token huấn luyện.
+
+## Hướng B (nhánh `rag-legal`): dữ liệu pháp luật
+
+Nguồn thô nằm ở `data/raw/<tên>/`, mỗi thư mục có một `SOURCE.json` (repo, revision đã ghim, giấy phép, sha256 của
+từng file). Tải lại: `python scripts/fetch_legal.py`. Giấy phép được kiểm ngày 26/10/2026:
+
+| Tên | Nguồn | Giấy phép | Dùng cho |
+|---|---|---|---|
+| `vlegal_bench` | `CMC-OPENAI/VLegal-Bench` @215f273 | CC BY-NC-ND 4.0 | Chỉ đánh giá; không phát hành ngữ cảnh đã nén hay dịch, chỉ công bố điểm |
+| `vbpl` | `th1nhng0/vietnamese-legal-documents` @8977887, chỉ `data/` (810 MB) | CC BY 4.0 (bản biên soạn) | Kho văn bản chính |
+| `phapdien` | `tmquan/phapdien-moj-gov-vn` @a1b6860, không lấy embedding | CC BY 4.0 | Dự phòng; xem lưu ý dưới |
+
+`python scripts/build_legal_corpus.py` tách các văn bản trung ương ("Trung ương" và "Toàn quốc"; các luật 2024–2025
+mang nhãn "Toàn quốc"), không lấy bản dịch, bằng `viword.legal`, rồi ghi:
+
+- `data/legal/vbpl_articles.jsonl`: mỗi dòng một Điều, gồm thông tin văn bản, `attachment` (0 = văn bản chính,
+  k = văn bản kèm theo thứ k), `article`, `article_title`, `part`, `intro`, `clauses[{n, text, points[{l, text}]}]`
+  và `points` (các Điểm nằm thẳng dưới Điều).
+- `data/legal/vbpl_docs.jsonl`: mỗi dòng một văn bản, gồm số Điều/Khoản/Điểm, số văn bản kèm theo và cảnh báo.
+
+Kết quả lần dựng ngày 26/10/2026:
+
+- 46.119 văn bản. 31.627 văn bản có Điều; tổng cộng 389.553 Điều, 994.511 Khoản và 767.557 Điểm.
+- 3.796 văn bản có văn bản kèm theo. 860 Điều là biểu mẫu và không thành đơn vị chọn.
+- 1.910 văn bản có cảnh báo:
+  - 1.339 lần số Điều không liền mạch;
+  - 838 lần đặt lại ngoặc kép bị mất;
+  - 462 văn bản còn ngoặc kép chưa đóng ở cuối;
+  - 27 văn bản có phần thân bị lặp và đã được cắt.
+- Văn bản không có Điều chủ yếu thuộc hai nhóm. Một là thông tư và văn bản cũ chia theo mục "I.", "1/", "a.". Hai là
+  trang không có nội dung: 4.196 văn bản có ≤ 5 dòng, kể cả Luật Thuế giá trị gia tăng 2024.
+
+`python scripts/check_legal_citations.py` đo phần trích dẫn VLegal-Bench mà kho phục vụ được, ở mức Khoản:
+
+| Tác vụ | Trích dẫn | Tra được văn bản | Có Điều | Có Khoản |
+|---|---|---|---|---|
+| 3.1, đáp án đúng | 600 | 589 (98%) | 541 (90%) | 541 (90%) |
+| 3.1, phương án nhiễu | 1.800 | 1.030 (57%) | 541 (30%) | 463 (26%) |
+| 3.3, Điều trong `content` | 715 | 697 (97%) | 622 (87%) | 622 (87%) |
+
+Phương án nhiễu của 3.1 phần lớn là trích dẫn không có thật (ví dụ Khoản 4 Điều 10 của một nghị định chỉ có 3
+Điều). phapdien gần như không chứa các văn bản 3.1 trích dẫn: chỉ 6/299 cặp (văn bản, Điều) có số hiệu, vì bộ pháp
+điển cập nhật chậm và đánh số lại Điều. Vì vậy vbpl là kho chính.
